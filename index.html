@@ -501,22 +501,36 @@
   .ctime .csec { font-size: 0.3em; font-weight: 700; margin-left: 8px; letter-spacing: 0; opacity: 0.75; }
   .cdate { margin-top: 12px; font-size: clamp(15px, 1.8vw, 19px); font-weight: 700; opacity: 0.8; }
 
-  /* 右下角的两个圆形按钮。上面是番茄时钟，下面是 C（切换清爽模式）。
-     平时完全透明；鼠标靠近右下角时，JS 给 .corner 加上 .near，它们才浮现 */
+  /* ---------- 9.5b 右侧侧边栏 ----------
+     所有功能按钮统一放在这里，从上到下排列，最上面是切换清爽模式的 C 按钮。
+     样式和各个模块一致（黑色磨砂玻璃 + 鼠标聚光）。
+     平时透明；鼠标靠近它时 JS 给它加上 .near，它就会从右边滑进来。
+     以后想加新功能：在 HTML 的 <aside id="corner"> 里再写一个 <button class="cbtn spot">，
+     侧边栏会自己变长，"鼠标靠近"的判断也会自动跟着变。 */
   .corner {
     position: fixed;
-    right: 24px;
-    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);    /* 垂直居中。用 transform，这样不会和下面的 translate 动画冲突 */
     z-index: 110;
+    padding: 8px;
     display: flex;
-    flex-direction: column;     /* 竖着排：DOM 里先写的在上面 */
-    gap: 12px;
+    flex-direction: column;         /* 竖着排：DOM 里先写的在上面 */
+    gap: 8px;
+    border-radius: 30px;
+    opacity: 0;
+    pointer-events: none;           /* 隐藏时不挡住后面的东西 */
+    translate: 16px 0;              /* 藏起来时往右偏一点，浮现时滑进来 */
+    transition: opacity 0.35s var(--ease), translate 0.35s var(--ease);
   }
+  .corner.near,
+  .corner:has(.cbtn:focus-visible) { opacity: 1; pointer-events: auto; translate: 0 0; }
+
   .cbtn {
-    width: 46px;
-    height: 46px;
+    width: 44px;
+    height: 44px;
     padding: 0;
-    border-radius: 50%;         /* 覆盖 .glass 的大圆角，变成正圆 */
+    border-radius: 50%;
     display: grid;
     place-items: center;
     color: var(--text);
@@ -524,28 +538,40 @@
     font-size: 18px;
     font-weight: 900;
     cursor: pointer;
-    opacity: 0;
-    pointer-events: none;       /* 隐藏时不挡住后面的东西 */
-    translate: 0 8px;
-    transition: opacity 0.35s var(--ease), translate 0.35s var(--ease), transform 0.3s var(--ease);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    transition: transform 0.3s var(--ease), background 0.25s, color 0.25s,
+                height 0.4s var(--ease), margin 0.4s var(--ease), opacity 0.3s,
+                border-width 0.4s, visibility 0s;
   }
   .cbtn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2;
               stroke-linecap: round; stroke-linejoin: round; }
-  .cbtn:hover { transform: scale(1.1); }
+  .cbtn:hover { transform: scale(1.1); background: rgba(255, 255, 255, 0.12); }
   .cbtn:active { transform: scale(0.94); }
-  .corner.near #clean-btn,
-  .cbtn:focus-visible { opacity: 1; pointer-events: auto; translate: 0 0; }
-  /* 番茄时钟按钮：只有清爽模式下 + 鼠标靠近才显示 */
-  body:not(.clean) #pomo-btn { visibility: hidden; }
-  body.clean .corner.near #pomo-btn { opacity: 1; pointer-events: auto; translate: 0 0; }
   .cbtn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  .cbtn[aria-pressed="true"] { background: #fff; color: #0c0c10; }   /* C 按钮：清爽模式开着时变成白色实心 */
+  .cbtn[aria-pressed="true"]:hover { background: #fff; }
+
+  /* 番茄时钟按钮：只在清爽模式下才出现。
+     不是直接 display:none，而是把高度收成 0，这样进入清爽模式时侧边栏会平滑地"长出"一个按钮 */
+  body:not(.clean) #pomo-btn {
+    height: 0;
+    margin-top: -8px;               /* 抵消掉它和上一个按钮之间的 8px 间距 */
+    opacity: 0;
+    border-width: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: height 0.4s var(--ease), margin 0.4s var(--ease), opacity 0.3s,
+                border-width 0.4s, visibility 0s 0.4s;
+  }
 
   /* ---------- 9.6 番茄时钟窗口 ----------
      用 left / top 定位（拖动时 JS 会改它们）；一开始靠 right / bottom 停在右下角 */
   .pomo {
     position: fixed;
-    right: 24px;
-    bottom: 150px;              /* 在两个按钮上方 */
+    right: 92px;                /* 留出右边侧边栏的位置 */
+    bottom: 28px;
     z-index: 120;
     width: 264px;
     padding: 20px 22px 22px;
@@ -663,6 +689,143 @@
     transition: opacity 0.45s var(--ease), translate 0.45s var(--ease), visibility 0s 0s;
   }
 
+  /* ---------- 9.7 窗口拖动 / 惯性滑行时的"减负" ----------
+     拖动时，窗口背后的磨砂模糊（backdrop-filter）是最吃性能的部分，每一帧都要重新算。
+     所以拖动和滑行期间，临时关掉模糊、换成更深一点的纯色底；松手停稳后再恢复。
+     窗口本身用 transform 移动（由显卡直接处理，不触发重新排版），所以会顺滑很多。 */
+  .glass.dragging,
+  .glass.gliding {
+    -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+    background: rgba(14, 14, 18, 0.86);
+    will-change: transform;
+  }
+  .ftwin.dragging iframe,
+  .ftwin.gliding iframe { pointer-events: none; }   /* 拖动时别让网页抢走鼠标事件 */
+
+  /* ---------- 9.8 番茄钟里的"停止计时"和"重新输入" ---------- */
+  .pomo-time { transition: opacity 0.3s; }
+  .pomo[data-paused="true"] .pomo-time { opacity: 0.5; }   /* 暂停时数字变暗，一眼能看出 */
+  .pomo-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .pomo-act {
+    flex: 1;
+    padding: 9px 0;
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.25s, transform 0.3s var(--ease);
+  }
+  .pomo-act:hover { background: rgba(255, 255, 255, 0.16); transform: translateY(-1px); }
+  .pomo-act:active { transform: scale(0.97); }
+  .pomo-act:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+  /* ---------- 9.9 文件传输助手：页面里的入口模块 + 可拖动的窗口 ---------- */
+  .ft-panel {
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .ft-panel .panel-title { margin-bottom: 6px; }
+  .ft-desc { max-width: 520px; font-size: 14px; line-height: 1.6; color: var(--text-soft); }
+  .ft-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  /* 胶囊按钮（以后别的模块也能用：class="pill"，想要更淡的加 ghost） */
+  .pill {
+    padding: 11px 22px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.25s, transform 0.35s var(--ease);
+  }
+  .pill.ghost { background: transparent; }
+  .pill:hover { background: rgba(255, 255, 255, 0.22); transform: translateY(-2px); }
+  .pill:active { transform: scale(0.97); }
+  .pill:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+  /* 窗口：一开始藏着，加上 .open 才淡入（和番茄钟窗口同一套动画） */
+  .ftwin {
+    position: fixed;
+    right: 92px;
+    top: 7vh;
+    z-index: 105;
+    width: min(400px, 92vw);
+    height: min(680px, 84vh);
+    padding: 14px;
+    border-radius: 24px;
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    visibility: hidden;
+    scale: 0.96;
+    translate: 0 10px;
+    transition: opacity 0.4s var(--ease), scale 0.4s var(--ease), translate 0.4s var(--ease), visibility 0s 0.4s;
+  }
+  .ftwin.open {
+    opacity: 1;
+    visibility: visible;
+    scale: 1;
+    translate: 0 0;
+    transition: opacity 0.4s var(--ease), scale 0.4s var(--ease), translate 0.4s var(--ease), visibility 0s 0s;
+  }
+  /* 进入清爽模式：这个窗口也跟着淡出（它依然"开着"，退出清爽模式后会回来） */
+  body.clean .ftwin.open {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.6s var(--ease), visibility 0s 0.6s;
+  }
+  .ftwin-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 4px 12px;
+    cursor: grab;                 /* 按住标题栏可以拖动整个窗口 */
+    user-select: none;
+    touch-action: none;
+  }
+  .ftwin.dragging .ftwin-head { cursor: grabbing; }
+  .ftwin-title { font-size: 14px; font-weight: 900; color: var(--text-soft); }
+  .ftwin-tools { display: flex; gap: 4px; }
+  .ftwin-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    color: var(--text-soft);
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.25s, color 0.25s;
+  }
+  .ftwin-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+  .ftwin-btn:focus-visible { outline: 2px solid #fff; }
+  .ftwin-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2;
+                   stroke-linecap: round; stroke-linejoin: round; }
+  .ftwin iframe {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    border: 0;
+    border-radius: 14px;
+    background: #fff;             /* 微信的网页是浅色的，给它一个白底 */
+  }
+  .ftwin-hint { margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--text-soft); }
+
   /* ---------- 10. 入场动画（只做一次） ----------
      模块按顺序从下方浮现。--i 是顺序号（在 HTML 里写），越小越先出现。 */
   .reveal {
@@ -757,6 +920,20 @@
       <nav class="sites" id="sites" aria-label="常用网站"></nav>
     </section>
 
+    <!-- ===== 模块⑤：文件传输助手入口 =====
+         点"在此处打开"，会在页面上弹出一个可拖动的窗口；
+         点"新窗口打开"，会用浏览器自带的小窗口打开（最稳）。 -->
+    <section class="site-panel ft-panel glass spot reveal" style="--i:3">
+      <div>
+        <h2 class="panel-title">文件传输助手</h2>
+        <p class="ft-desc">用微信扫码登录后，手机和电脑之间可以互相传文字和文件。</p>
+      </div>
+      <div class="ft-actions">
+        <button type="button" class="pill" id="ft-open">在此处打开</button>
+        <button type="button" class="pill ghost" id="ft-popup">新窗口打开</button>
+      </div>
+    </section>
+
     <!--
       想再加一个模块？复制下面这一整段，去掉首尾的注释符号，改里面的内容即可。
       它会出现在最下面，页面就会变长、可以往下滑了。
@@ -789,17 +966,20 @@
     <div class="cdate" id="cdate"></div>
   </div>
 
-  <!-- ===== 右下角按钮（平时透明，鼠标靠近才浮现） =====
-       上面：番茄时钟（只在清爽模式下出现）   下面：C（切换清爽模式，也可以直接按键盘 C） -->
-  <div class="corner" id="corner">
-    <button type="button" class="cbtn glass spot" id="pomo-btn" title="番茄时钟" aria-label="打开或关闭番茄时钟">
+  <!-- ===== 右侧侧边栏（平时透明，鼠标靠近才滑出来） =====
+       所有功能按钮都放在这里，从上到下排。最上面是 C（切换清爽模式，也可以直接按键盘 C），
+       下面是番茄时钟（只在清爽模式下出现）。
+       【以后加新功能】在这里再写一个 <button type="button" class="cbtn spot" ...> 就行，
+       侧边栏会自己变长。 -->
+  <aside class="corner glass spot" id="corner" aria-label="功能侧边栏">
+    <button type="button" class="cbtn spot" id="clean-btn" title="清爽模式（按 C）" aria-label="切换清爽模式" aria-pressed="false">C</button>
+    <button type="button" class="cbtn spot" id="pomo-btn" title="番茄时钟" aria-label="打开或关闭番茄时钟">
       <!-- 一个小秒表图标（SVG，不需要额外图片） -->
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="13.5" r="7.5"></circle><path d="M12 9.5v4l2.5 2"></path><path d="M9.5 2.5h5"></path>
       </svg>
     </button>
-    <button type="button" class="cbtn glass spot" id="clean-btn" title="清爽模式（按 C）" aria-label="切换清爽模式" aria-pressed="false">C</button>
-  </div>
+  </aside>
 
   <!-- ===== 番茄时钟窗口（可拖动） =====
        data-phase 表示现在的阶段，由 script 来改：
@@ -824,8 +1004,37 @@
         <div class="pomo-phase" id="pomo-phase">专注中</div>
         <div class="pomo-time" id="pomo-time">00:00</div>
         <div class="pomo-track"><div class="pomo-fill" id="pomo-fill"></div></div>
+        <!-- 计时中才看得到这两个按钮：
+             停止计时 = 暂停（再点一下变成"继续计时"）；重新输入 = 放弃这一轮，回到输入框 -->
+        <div class="pomo-actions">
+          <button type="button" class="pomo-act" id="pomo-pause">停止计时</button>
+          <button type="button" class="pomo-act" id="pomo-redo">重新输入</button>
+        </div>
       </div>
     </div>
+  </div>
+
+  <!-- ===== 文件传输助手窗口（可拖动） =====
+       里面是一个 iframe（"网页中的网页"）。为了不浪费流量，第一次点"打开"时才开始加载。
+       拖动：按住顶部标题栏。 -->
+  <div class="ftwin glass spot" id="ftwin" role="dialog" aria-label="文件传输助手">
+    <div class="ftwin-head" id="ftwin-head">
+      <span class="ftwin-title">文件传输助手</span>
+      <span class="ftwin-tools">
+        <!-- ↗：在浏览器的新窗口里打开 -->
+        <button type="button" class="ftwin-btn" id="ftwin-popup" title="在新窗口打开" aria-label="在新窗口打开">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3v10h10v-3M9 3h4v4M13 3L7 9"></path></svg>
+        </button>
+        <!-- X：关闭窗口 -->
+        <button type="button" class="ftwin-btn" id="ftwin-close" title="关闭" aria-label="关闭">
+          <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12"></path></svg>
+        </button>
+      </span>
+    </div>
+    <iframe id="ft-frame" title="文件传输助手"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
+            referrerpolicy="no-referrer"></iframe>
+    <p class="ftwin-hint">如果上面是空白或提示"拒绝连接"，说明微信不允许被嵌进别的网页，请点右上角的 ↗ 在新窗口打开。</p>
   </div>
 
   <!-- 屏幕正上方的提示条：专注时间到了会在这里提示（点一下可以关掉） -->
@@ -1139,15 +1348,20 @@
     toggleClean();
   });
 
-  // 鼠标靠近右下角时，给 .corner 加上 .near，按钮就会浮现（CSS 里写了浮现的样子）
-  // dx / dy = 鼠标离屏幕右边 / 下边有多远（像素）。
-  // 清爽模式下多一个番茄钟按钮，所以往上要多留一些距离。
+  // 鼠标靠近右侧侧边栏时，给 #corner 加上 .near，它就会滑出来（样式见 CSS 的 .corner.near）。
+  // 判断方法：量出侧边栏现在的位置，鼠标离它不到 NEAR_PAD 像素就算"靠近"。
+  // 以后侧边栏里多加按钮、它变长了，这个判断会自动跟着变，不用改。
+  const NEAR_PAD = 90;
   document.addEventListener("mousemove", (e) => {
-    const dx = window.innerWidth - e.clientX;
-    const dy = window.innerHeight - e.clientY;
-    corner.classList.toggle("near", dx < 150 && dy < (isClean() ? 200 : 120));
+    const r = corner.getBoundingClientRect();
+    corner.classList.toggle(
+      "near",
+      e.clientX > r.left - NEAR_PAD &&        // 横向：离侧边栏左边缘 90px 以内（右边就是屏幕边缘）
+      e.clientY > r.top - NEAR_PAD &&         // 纵向：在侧边栏上下各 90px 的范围内
+      e.clientY < r.bottom + NEAR_PAD
+    );
   });
-  // 鼠标离开浏览器窗口时，也把按钮藏起来
+  // 鼠标离开浏览器窗口时，也把侧边栏收起来
   document.documentElement.addEventListener("mouseleave", () => corner.classList.remove("near"));
 
   /* ============================================================
@@ -1167,11 +1381,15 @@
   const pomoTime  = document.getElementById("pomo-time");
   const pomoFill  = document.getElementById("pomo-fill");
   const toastEl   = document.getElementById("toast");
+  const pomoPauseBtn = document.getElementById("pomo-pause");   // 停止计时（暂停 / 继续）
+  const pomoRedoBtn  = document.getElementById("pomo-redo");    // 重新输入
 
   let pomoTimer = null;   // 定时器编号
   let pomoEnd = 0;        // 这一阶段"结束的时刻"（毫秒时间戳）
   let pomoTotal = 0;      // 这一阶段总共多少毫秒
   let toastTimer = null;
+  let pomoPaused = false; // 现在是不是"暂停"状态
+  let pomoLeft = 0;       // 暂停那一刻还剩多少毫秒（继续时要用）
 
   /* ----- 铃声：用浏览器自带的声音合成器"现场造"一个钟声，不需要音频文件 -----
      浏览器规定：必须在你操作过页面（比如按 Enter）之后才允许发声，
@@ -1241,7 +1459,8 @@
      这样即使浏览器把后台标签页的定时器拖慢，时间也不会走偏。 */
   function startPhase(phase, minutes) {
     pomoEl.dataset.phase = phase;                          // "work" 或 "break"，CSS 据此切换显示
-    pomoPhase.textContent = phase === "work" ? "专注中" : "休息中";
+    setPaused(false);                                      // 新的一段计时一定是"进行中"
+    renderPhaseLabel();
     pomoTotal = minutes * 60 * 1000;
     pomoEnd = Date.now() + pomoTotal;
     clearInterval(pomoTimer);
@@ -1279,6 +1498,7 @@
   // 回到"等你输入"的初始状态
   function resetPomo() {
     pomoEl.dataset.phase = "idle";
+    setPaused(false);
     pomoInput.value = "";
     pomoTime.textContent = "00:00";
     pomoFill.style.width = "0%";
@@ -1310,47 +1530,204 @@
     startPhase("work", n);
   });
 
-  /* ----- 拖动窗口 -----
-     在窗口的空白处按住鼠标拖，就能移动（点输入框和按钮不会触发拖动）。
-     原理：按下时记下"鼠标离窗口左上角多远"，移动时让窗口左上角 = 鼠标位置 - 那段距离。 */
-  pomoEl.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("input, button")) return;
-    const r = pomoEl.getBoundingClientRect();
-    // 第一次拖动：把"靠右下角定位"换成"用 left / top 定位"，后面才能随意移动
-    pomoEl.style.left = r.left + "px";
-    pomoEl.style.top = r.top + "px";
-    pomoEl.style.right = "auto";
-    pomoEl.style.bottom = "auto";
-    const offX = e.clientX - r.left;
-    const offY = e.clientY - r.top;
-    pomoEl.setPointerCapture(e.pointerId);   // 鼠标拖出窗口范围也继续跟随
-    pomoEl.classList.add("dragging");
+  /* ----- 暂停 / 继续 / 重新输入 -----
+     "停止计时"：把现在还剩多久记下来，停掉定时器（数字会变暗）；再点一次就从剩下的时间继续。
+     "重新输入"：放弃这一轮（专注或休息都一样），回到输入框，可以重新写分钟数。 */
+  function renderPhaseLabel() {
+    const base = pomoEl.dataset.phase === "break" ? "休息中" : "专注中";
+    pomoPhase.textContent = base + (pomoPaused ? " · 已暂停" : "");
+  }
+  function setPaused(on) {
+    pomoPaused = on;
+    pomoEl.dataset.paused = String(on);                    // CSS 靠它把暂停时的数字变暗
+    pomoPauseBtn.textContent = on ? "继续计时" : "停止计时";
+    renderPhaseLabel();
+  }
 
-    const move = (ev) => {
-      // 限制在屏幕范围内，别拖丢了
-      const x = Math.min(Math.max(0, ev.clientX - offX), window.innerWidth - r.width);
-      const y = Math.min(Math.max(0, ev.clientY - offY), window.innerHeight - r.height);
-      pomoEl.style.left = x + "px";
-      pomoEl.style.top = y + "px";
-    };
-    const up = () => {
-      pomoEl.classList.remove("dragging");
-      pomoEl.removeEventListener("pointermove", move);
-      pomoEl.removeEventListener("pointerup", up);
-      pomoEl.removeEventListener("pointercancel", up);
-    };
-    pomoEl.addEventListener("pointermove", move);
-    pomoEl.addEventListener("pointerup", up);
-    pomoEl.addEventListener("pointercancel", up);
+  pomoPauseBtn.addEventListener("click", () => {
+    if (pomoEl.dataset.phase === "idle") return;
+    if (!pomoPaused) {
+      pomoLeft = Math.max(0, pomoEnd - Date.now());        // 记下还剩多少
+      clearInterval(pomoTimer);
+      pomoTimer = null;
+      setPaused(true);
+    } else {
+      pomoEnd = Date.now() + pomoLeft;                     // 从"现在"开始，再数 pomoLeft 这么久
+      clearInterval(pomoTimer);
+      pomoTimer = setInterval(pomoTick, 250);
+      setPaused(false);
+      pomoTick();
+    }
   });
 
-  // 缩小浏览器窗口时，如果窗口被挤到屏幕外，把它拉回来
-  window.addEventListener("resize", () => {
-    if (!pomoEl.style.left) return;           // 还没拖动过就不用管
-    const r = pomoEl.getBoundingClientRect();
-    pomoEl.style.left = Math.min(Math.max(0, r.left), Math.max(0, window.innerWidth - r.width)) + "px";
-    pomoEl.style.top = Math.min(Math.max(0, r.top), Math.max(0, window.innerHeight - r.height)) + "px";
+  pomoRedoBtn.addEventListener("click", () => {
+    clearInterval(pomoTimer);
+    pomoTimer = null;
+    resetPomo();                                           // 回到输入状态
+    requestAnimationFrame(() => pomoInput.focus());        // 光标直接放进输入框
   });
+
+  /* ============================================================
+     J. 拖动窗口，并在松手后"惯性滑行"
+     makeDraggable(要移动的窗口, 按住哪里可以拖, 哪些东西点了不触发拖动)
+
+     为什么之前会卡：
+       ① 以前是不停地改 left / top，每一帧浏览器都要重新排版；
+       ② 窗口背后的磨砂模糊每一帧都要重新计算，非常吃性能。
+     现在的做法：
+       ① 用 transform 移动（显卡直接处理，不需要重新排版）；
+       ② 每一帧最多更新一次（requestAnimationFrame）；
+       ③ 拖动和滑行期间临时关掉模糊（见 CSS 9.7），停稳后自动恢复。
+
+     惯性怎么算：
+       松手那一刻，用"最近 0.1 秒内鼠标走了多远 ÷ 用了多久"得到速度，
+       之后每一帧让速度按指数规律衰减，位置 += 速度 × 时间，所以越滑越慢、自然停下。
+       撞到屏幕边缘就贴边停住。
+     ============================================================ */
+  function makeDraggable(el, handle, ignoreSel) {
+    let tx = 0, ty = 0;              // 窗口相对"原来位置"挪动了多少像素
+    let dragRaf = 0, glideRaf = 0;   // requestAnimationFrame 的编号，用来随时取消
+
+    const clampN = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+    const apply = () => { el.style.transform = "translate3d(" + tx + "px," + ty + "px,0)"; };
+
+    // 窗口还能往每个方向挪多远：先倒推出"没挪动时的原位"，再换算成允许的偏移范围
+    function bounds() {
+      const r = el.getBoundingClientRect();
+      const baseL = r.left - tx, baseT = r.top - ty;
+      return {
+        minX: -baseL, maxX: window.innerWidth - r.width - baseL,
+        minY: -baseT, maxY: window.innerHeight - r.height - baseT,
+      };
+    }
+
+    // 松手后的滑行
+    function glide(vx, vy, b) {
+      const MAX_SPEED = 2.4;                      // 速度上限（像素/毫秒），防止"甩飞出去"
+      const sp = Math.hypot(vx, vy);
+      if (sp < 0.12) return;                      // 太慢就不滑了
+      if (sp > MAX_SPEED) { vx *= MAX_SPEED / sp; vy *= MAX_SPEED / sp; }
+
+      // 【改这里】滑行手感：TAU 越大滑得越远、越久。总滑行距离 ≈ 松手速度 × TAU
+      // 比如正常拖动速度约 1 像素/毫秒，TAU=280 → 大约再滑 280 像素
+      const TAU = 280;
+
+      let last = performance.now();
+      el.classList.add("gliding");
+      const step = (now) => {
+        const dt = Math.min(now - last, 40);      // 单帧最多算 40ms，避免切标签页回来时突然跳很远
+        last = now;
+        const k = Math.exp(-dt / TAU);            // 这一帧速度要乘以多少（<1，越来越慢）
+        tx += vx * TAU * (1 - k);                 // 这一帧走过的距离（对衰减速度积分的结果）
+        ty += vy * TAU * (1 - k);
+        vx *= k; vy *= k;
+        // 撞到屏幕边缘：贴边，并把这个方向的速度清零
+        if (tx < b.minX) { tx = b.minX; vx = 0; } else if (tx > b.maxX) { tx = b.maxX; vx = 0; }
+        if (ty < b.minY) { ty = b.minY; vy = 0; } else if (ty > b.maxY) { ty = b.maxY; vy = 0; }
+        apply();
+        if (Math.hypot(vx, vy) > 0.02) glideRaf = requestAnimationFrame(step);
+        else el.classList.remove("gliding");      // 速度小到看不出来了，结束
+      };
+      glideRaf = requestAnimationFrame(step);
+    }
+
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;                              // 只响应鼠标左键
+      if (ignoreSel && e.target.closest(ignoreSel)) return;    // 点到输入框/按钮时不拖动
+      cancelAnimationFrame(glideRaf);                          // 如果窗口还在滑，按住就让它立刻停下
+      el.classList.remove("gliding");
+
+      const b = bounds();
+      const startX = e.clientX, startY = e.clientY;            // 按下时鼠标的位置
+      const baseX = tx, baseY = ty;                            // 按下时窗口的偏移
+      let nx = tx, ny = ty, queued = false;
+      const samples = [{ t: performance.now(), x: tx, y: ty }];   // 记录最近的位置，用来算松手速度
+
+      handle.setPointerCapture(e.pointerId);                   // 鼠标拖出窗口范围也继续跟随
+      el.classList.add("dragging");
+
+      const move = (ev) => {
+        nx = clampN(baseX + ev.clientX - startX, b.minX, b.maxX);
+        ny = clampN(baseY + ev.clientY - startY, b.minY, b.maxY);
+        const now = performance.now();
+        samples.push({ t: now, x: nx, y: ny });
+        while (samples.length > 2 && now - samples[0].t > 100) samples.shift();   // 只留最近约 100ms
+        if (!queued) {                                         // 每一帧最多画一次
+          queued = true;
+          dragRaf = requestAnimationFrame(() => { queued = false; tx = nx; ty = ny; apply(); });
+        }
+      };
+
+      const up = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        handle.removeEventListener("pointercancel", up);
+        cancelAnimationFrame(dragRaf);
+        tx = nx; ty = ny; apply();
+        el.classList.remove("dragging");
+
+        // 算松手时的速度；如果松手前鼠标已经停了一会儿（>80ms），就不滑
+        const now = performance.now();
+        const first = samples[0], last = samples[samples.length - 1];
+        let vx = 0, vy = 0;
+        if (now - last.t < 80 && last.t - first.t > 8) {
+          vx = (last.x - first.x) / (last.t - first.t);
+          vy = (last.y - first.y) / (last.t - first.t);
+        }
+        glide(vx, vy, b);
+      };
+
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+      handle.addEventListener("pointercancel", up);
+    });
+
+    // 返回一个小工具：缩小浏览器窗口时，用它把窗口拉回屏幕内
+    return {
+      clamp() {
+        const b = bounds();
+        tx = clampN(tx, b.minX, b.maxX);
+        ty = clampN(ty, b.minY, b.maxY);
+        apply();
+      },
+    };
+  }
+
+  // 番茄钟窗口：在窗口任何空白处按住都能拖（点输入框和按钮除外）
+  const pomoDrag = makeDraggable(pomoEl, pomoEl, "input, button");
+
+  /* ============================================================
+     K. 文件传输助手
+     两种打开方式：
+       ① 在页面里弹出窗口（iframe，第一次打开时才加载网页）
+       ② 用浏览器自带的小窗口打开（最稳）
+     提醒：微信的网页版可能不允许被嵌进别的网页（网站自己决定的），
+     这时窗口里会是空白或"拒绝连接"，用 ② 就行。
+     ============================================================ */
+  const FT_URL = "https://filehelper.weixin.qq.com/";
+  const ftWin   = document.getElementById("ftwin");
+  const ftFrame = document.getElementById("ft-frame");
+
+  function openFt() {
+    // 第一次打开才给 iframe 设置网址（懒加载）
+    if (!ftFrame.getAttribute("src")) ftFrame.setAttribute("src", FT_URL);
+    ftWin.classList.add("open");
+  }
+  function closeFt() { ftWin.classList.remove("open"); }
+  function popupFt() {
+    window.open(FT_URL, "filehelper", "popup,width=460,height=780,noopener,noreferrer");
+  }
+
+  document.getElementById("ft-open").addEventListener("click", openFt);
+  document.getElementById("ft-popup").addEventListener("click", popupFt);
+  document.getElementById("ftwin-popup").addEventListener("click", popupFt);
+  document.getElementById("ftwin-close").addEventListener("click", closeFt);
+
+  // 只有顶部标题栏可以拖（窗口大部分是网页，拖不了）
+  const ftDrag = makeDraggable(ftWin, document.getElementById("ftwin-head"), "button");
+
+  // 缩小浏览器窗口时，如果窗口被挤到屏幕外，把它们拉回来
+  window.addEventListener("resize", () => { pomoDrag.clamp(); ftDrag.clamp(); });
 
   /* ---------- G. 入场动画 ---------- */
   // 等页面画好后给 body 加 "ready"，CSS 里的入场动画就开始播放

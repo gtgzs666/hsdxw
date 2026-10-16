@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>海参的小窝</title>
+
+<!-- 字体：Noto Sans SC（思源黑体），有 400 / 700 / 900 三种粗细。
+     联网时自动加载；加载不到就用下面 CSS 里写的备用字体，不会坏。 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+
+<!--
+  ============================================================
+  文件结构（从上到下）：
+    1. <style>   —— 外观：颜色、黑色磨砂玻璃、鼠标聚光、动画
+    2. <body>    —— 页面里有哪些模块：
+                      ① 个人信息   ② 时间 + 日历   ③ 常用网站   ④ 底部搜索栏
+    3. <script>  —— 逻辑：每日金句、时钟、日历、网站图标、鼠标聚光
+
+  你最常改的地方，我都用【改这里】标出来了：
+    - 背景图文件名（style 里）
+    - 头像文件名（body 里）
+    - 网站列表（script 最上面）
+  ============================================================
+-->
+
+<style>
+  /* ---------- 1. 全局变量：配色、模糊、圆角都在这里调 ---------- */
+  :root {
+    /* 黑色磨砂玻璃：底色是半透明的黑。第四个数字是透明度，越大越黑越不透 */
+    --glass-bg: rgba(12, 12, 16, 0.55);
+    --glass-border: rgba(255, 255, 255, 0.10);   /* 边缘的细线 */
+    --glass-blur: 24px;                          /* 磨砂程度 */
+    --glass-shadow: 0 18px 50px rgba(0, 0, 0, 0.40);
+
+    --text: #f4f4f6;
+    --text-soft: rgba(244, 244, 246, 0.62);
+
+    --radius: 28px;                              /* 大模块的圆角 */
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);      /* 动画手感：先快后慢 */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    color: var(--text);
+    background: #0a0b12;      /* 图片没加载出来时的保底色 */
+    min-height: 100vh;
+  }
+
+  /* ---------- 2. 固定背景图层 ---------- */
+  .bg {
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+
+    /* 【改这里】把 bg.jpg 换成你上传的背景图文件名。
+       两层从上到下：①你的图片 ②保底渐变。
+       （压暗层现在是下面单独的 .bg::after，这样清爽模式可以把它调淡） */
+    background:
+      url("bg.jpg") center / cover no-repeat,
+      linear-gradient(135deg, #141a3d 0%, #3b2a66 55%, #7a3b66 100%);
+
+    /* 打开页面时：背景先放大+模糊，再慢慢对焦（见 .ready） */
+    transform: scale(1.08);
+    filter: blur(18px);
+    transition: transform 1.6s var(--ease), filter 1.6s var(--ease);
+  }
+  body.ready .bg { transform: scale(1); filter: blur(0); }
+
+  /* 压暗层：盖在壁纸上的一层半透明黑，让文字更清楚。
+     清爽模式下它会淡到很浅（opacity 0.25），壁纸就更亮、更好看 */
+  .bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(5, 6, 12, 0.35), rgba(5, 6, 12, 0.65));
+    transition: opacity 0.9s var(--ease);
+  }
+  body.clean .bg::after { opacity: 0.25; }
+
+  /* 屏幕底部的一层渐隐黑影：让固定的搜索栏在任何背景图上都看得清 */
+  body::after {
+    content: "";
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: 170px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
+    pointer-events: none;   /* 不挡鼠标 */
+    z-index: 90;
+    transition: opacity 0.6s var(--ease);
+  }
+  body.clean::after { opacity: 0; }   /* 清爽模式下不需要这层黑影 */
+
+  /* ---------- 3. 黑色磨砂玻璃 ----------
+     class="glass" 就是玻璃。核心是 backdrop-filter：把元素"背后的画面"模糊掉。 */
+  .glass {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+            backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    border-radius: var(--radius);
+  }
+
+  /* ---------- 4. 鼠标聚光（交互高亮）----------
+     class="spot" 的元素会有两层效果：
+       ::before  —— 鼠标周围一团柔和的光（在内容后面）
+       ::after   —— 鼠标附近的边框会被点亮
+     光的位置由 script 把鼠标坐标写进 --mx / --my 两个变量来控制。 */
+  .spot {
+    position: relative;
+    isolation: isolate;       /* 让 ::before 能垫在内容后面、背景前面 */
+    --mx: 50%;
+    --my: 50%;
+  }
+  .spot::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    z-index: -1;
+    background: radial-gradient(320px circle at var(--mx) var(--my),
+                rgba(255, 255, 255, 0.13), transparent 65%);
+    opacity: 0;
+    transition: opacity 0.35s;
+    pointer-events: none;
+  }
+  .spot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;             /* 这 1px 就是被点亮的"边框"的粗细 */
+    background: radial-gradient(240px circle at var(--mx) var(--my),
+                rgba(255, 255, 255, 0.55), transparent 65%);
+    /* 下面两行是个小技巧：只保留 1px 的边框形状，中间挖空 */
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+            mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.35s;
+    pointer-events: none;
+  }
+  .spot:hover::before,
+  .spot:hover::after { opacity: 1; }
+
+  /* ---------- 5. 页面整体布局 ---------- */
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    /* 底部留出 170px，这样往下滑到底时，内容不会被固定的搜索栏挡住 */
+    padding: 48px 24px 170px;
+    display: grid;
+    gap: 22px;
+    grid-template-columns: 5fr 7fr;   /* 第一行：左边个人信息(5份)，右边时间日历(7份) */
+  }
+  .site-panel { grid-column: 1 / -1; }   /* 网站模块占满整行 */
+
+  /* ---------- 6. 模块①：个人信息 ---------- */
+  .profile {
+    padding: 28px;
+    display: flex;
+    flex-direction: column;     /* 上下排：上面是头像+欢迎，下面是今日日程 */
+    gap: 24px;
+  }
+  .profile-top {
+    display: flex;
+    gap: 22px;
+    align-items: flex-start;
+  }
+  .avatar {
+    position: relative;
+    flex: none;
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    font-size: 40px;
+    font-weight: 900;
+    background: linear-gradient(135deg, #7c8cff, #c46bff);   /* 没头像时的渐变底 */
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.14), 0 10px 28px rgba(0, 0, 0, 0.4);
+  }
+  .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+  .profile h1 {
+    font-size: clamp(30px, 3.6vw, 42px);
+    font-weight: 900;               /* 最粗一档，标题更有设计感 */
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+  .quote {
+    margin-top: 12px;
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--text-soft);
+    cursor: pointer;
+    transition: opacity 0.3s, transform 0.3s var(--ease);
+  }
+  .quote.swap { opacity: 0; transform: translateY(6px); }   /* 换句子时的淡出 */
+  .quote small { display: block; margin-top: 6px; font-size: 13px; opacity: 0.8; }
+
+  /* ---------- 6.5 今日日程 ----------
+     两个状态叠在同一个位置（grid-area: 1/1）：
+       .todo-ask  —— 还没写：提示 + 输入框
+       .todo-done —— 写好了：标题 + 大字内容
+     给 .todo 加上 "done" 这个 class，就会从"ask"淡出、"done"淡入。 */
+  .todo {
+    display: grid;
+    padding-top: 22px;
+    border-top: 1px solid var(--glass-border);   /* 和上面分隔的细线 */
+  }
+  .todo > * {
+    grid-area: 1 / 1;                            /* 两块叠在一起 */
+    transition: opacity 0.45s var(--ease), translate 0.45s var(--ease);
+  }
+
+  /* 状态一：提示 + 输入框。提示字号约为标题（42px）的一半 */
+  .todo-ask-title {
+    font-size: clamp(15px, 1.8vw, 21px);
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .todo-ask input {
+    width: 100%;
+    padding: 13px 18px;
+    font: inherit;
+    font-size: 16px;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    outline: none;                                /* 去掉默认边框，用下面的光圈代替 */
+    transition: background 0.3s, box-shadow 0.3s, border-color 0.3s;
+  }
+  .todo-ask input::placeholder { color: var(--text-soft); }
+  .todo-ask input:focus {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.30);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.10);
+  }
+
+  /* 状态二：写好之后。一开始是隐藏的 */
+  .todo-done {
+    opacity: 0;
+    visibility: hidden;
+    translate: 0 8px;
+    /* visibility 要等淡出播完（0.45s）才真正隐藏，否则会瞬间消失、看不到淡出 */
+    transition: opacity 0.45s var(--ease), translate 0.45s var(--ease), visibility 0s 0.45s;
+  }
+  .todo-done-label { font-size: 14px; color: var(--text-soft); margin-bottom: 8px; }
+  .todo-done-text {
+    font-size: 22px;            /* 和右边"星期几"的字号一致 */
+    font-weight: 900;
+    line-height: 1.4;
+    overflow-wrap: anywhere;    /* 写得很长时自动换行 */
+  }
+
+  /* 切换：ask 淡出（并上移一点），done 稍等一下再淡入 */
+  .todo.done .todo-ask {
+    opacity: 0;
+    translate: 0 -8px;
+    visibility: hidden;
+    transition: opacity 0.4s var(--ease), translate 0.4s var(--ease), visibility 0s 0.4s;
+  }
+  .todo.done .todo-done {
+    opacity: 1;
+    visibility: visible;
+    translate: 0 0;
+    transition: opacity 0.45s var(--ease) 0.35s, translate 0.45s var(--ease) 0.35s, visibility 0s 0.35s;
+  }
+  /* 完成后回到输入状态时：先等"今天要做的事"淡出（约0.35s），输入框再淡入 */
+  .todo:not(.done) .todo-ask { transition-delay: 0.35s; }
+
+  /* 勾选框 + 文字排成一行 */
+  .todo-item { display: flex; gap: 14px; align-items: flex-start; }
+
+  /* 勾选框：默认是空心的圆角方框 */
+  .check {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    margin-top: 3px;                 /* 对齐第一行文字的中线 */
+    padding: 0;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.3s, border-color 0.3s, box-shadow 0.3s, transform 0.3s var(--ease);
+  }
+  .check:hover { background: rgba(255, 255, 255, 0.12); transform: scale(1.08); }
+  .check:active { transform: scale(0.94); }
+  .check:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+  /* 里面的"勾"：用描边动画一笔画出来
+     pathLength="1" 把路径总长当作 1，所以 dasharray / dashoffset 用 1 就是"整条线" */
+  .check svg { width: 18px; height: 18px; fill: none; stroke: #0c0c10; stroke-width: 3;
+               stroke-linecap: round; stroke-linejoin: round; }
+  .check path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;            /* 1 = 整条线都藏起来 */
+    transition: stroke-dashoffset 0.35s var(--ease) 0.1s;
+  }
+
+  /* 被点击后（completing）：方框变成实心白色，勾被画出来；并且不能再点 */
+  .todo.completing .check {
+    background: #fff;
+    border-color: #fff;
+    box-shadow: 0 0 16px rgba(255, 255, 255, 0.45);
+    pointer-events: none;
+  }
+  .todo.completing .check path { stroke-dashoffset: 0; }   /* 0 = 整条线显示出来 */
+
+  /* 划线动画：用一条 2.5px 高的渐变线当"删除线"，宽度从 0% 拉到 100%。
+     文字同时变暗。这个类加在文字外层的 <span class="strike"> 上 */
+  .strike {
+    background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 0% 2.5px;
+    transition: background-size 0.6s var(--ease), color 0.6s;
+  }
+  .todo.striking .strike {
+    background-size: 100% 2.5px;
+    color: var(--text-soft);
+  }
+
+  /* ---------- 7. 模块②：时间 + 日历（左右各一半） ---------- */
+  .clockcal {
+    padding: 28px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+  .clock { display: flex; flex-direction: column; justify-content: center; }
+  .time {
+    font-size: clamp(54px, 7vw, 84px);
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;   /* 数字等宽，不会跳动 */
+  }
+  .time .sec { font-size: 0.34em; font-weight: 700; color: var(--text-soft); margin-left: 6px; letter-spacing: 0; }
+  .weekday { margin-top: 14px; font-size: 22px; font-weight: 900; }
+  .fulldate { margin-top: 4px; font-size: 15px; color: var(--text-soft); }
+
+  .calendar { padding-left: 28px; border-left: 1px solid var(--glass-border); }  /* 左边一条分隔线 */
+  .cal-title { font-size: 18px; font-weight: 900; margin-bottom: 12px; }
+  .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);   /* 一周 7 列 */
+    gap: 4px 0;
+    text-align: center;
+    font-size: 14px;
+  }
+  .cal-grid .wd { font-size: 12px; color: var(--text-soft); padding-bottom: 6px; }
+  .cal-grid .day {
+    height: 32px;
+    width: 32px;
+    margin: 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    transition: background 0.25s;
+  }
+  .cal-grid .day:hover { background: rgba(255, 255, 255, 0.12); }
+  /* 今天：白色实心圆 + 光晕，一眼就能看到 */
+  .cal-grid .day.today {
+    background: #fff;
+    color: #0c0c10;
+    font-weight: 900;
+    box-shadow: 0 0 18px rgba(255, 255, 255, 0.55);
+  }
+
+  /* ---------- 8. 模块③：常用网站 ---------- */
+  .site-panel { padding: 26px 28px 30px; }
+  .panel-title { font-size: 18px; font-weight: 900; margin-bottom: 18px; }
+  .sites {
+    display: grid;
+    /* 自动排列：每个图标至少 120px 宽，放不下就换行。屏幕够宽时 7 个正好一行 */
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 14px;
+  }
+  .tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 20px 8px 16px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13.5px;
+    font-weight: 700;
+    transition: transform 0.45s var(--ease), background 0.3s;
+  }
+  .tile:hover { transform: translateY(-6px); background: rgba(255, 255, 255, 0.08); }
+  .tile:active { transform: translateY(-1px) scale(0.97); transition-duration: 0.1s; }  /* 按下去轻轻一缩 */
+  .tile:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }   /* 键盘 Tab 选中时可见 */
+
+  .icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    font-size: 24px;
+    font-weight: 900;
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  }
+  .icon img { width: 100%; height: 100%; object-fit: cover; }
+  .tile .name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---------- 9. 模块④：底部搜索栏（固定，永远在最上层） ---------- */
+  .searchbar {
+    position: fixed;                 /* fixed = 固定在屏幕上，页面怎么滚它都不动 */
+    left: 50%;
+    bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+    z-index: 100;                    /* 数字越大越在上面；比其他所有东西都大 */
+    width: min(620px, 90vw);
+    height: 58px;
+    padding: 0 22px;
+    border-radius: 999px;            /* 胶囊形 */
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transform: translateX(-50%);     /* 配合 left:50% 做水平居中 */
+    transition: width 0.5s var(--ease), box-shadow 0.35s, background 0.35s, opacity 0.6s var(--ease);
+  }
+  /* 点进搜索框：变宽 + 外面一圈光 */
+  .searchbar:focus-within {
+    width: min(740px, 94vw);
+    background: rgba(8, 8, 12, 0.72);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 4px rgba(255, 255, 255, 0.14);
+  }
+  .searchbar svg { width: 20px; height: 20px; flex: none; opacity: 0.75; }
+  .searchbar input {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    outline: none;                   /* 去掉默认丑边框，用上面的光圈代替 */
+    color: var(--text);
+    font: inherit;
+    font-size: 17px;
+  }
+  .searchbar input::placeholder { color: var(--text-soft); }
+
+  /* ---------- 9.5 清爽模式 ----------
+     JS 给 <body> 加上 class="clean" 就进入清爽模式。
+     下面所有 body.clean 开头的规则，都是"清爽模式下才生效"。 */
+
+  /* 所有模块：淡出。visibility 要等淡出播完（0.6s）才隐藏，所以能看到淡出动画 */
+  .page { transition: opacity 0.6s var(--ease), visibility 0s; }
+  body.clean .page,
+  body.clean .searchbar {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.6s var(--ease), visibility 0s 0.6s;
+  }
+  body.clean { overflow: hidden; }   /* 清爽模式下锁住滚动，退出后回到原来的位置 */
+
+  /* 屏幕正上方的时钟：平时藏着，清爽模式下淡入。没有玻璃底，直接写在壁纸上 */
+  .cclock {
+    position: fixed;
+    left: 0; right: 0;
+    top: max(84px, 11vh);            /* 上面留一块地方给提示条 */
+    z-index: 50;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    translate: 0 -10px;
+    text-shadow: 0 3px 30px rgba(0, 0, 0, 0.55);   /* 柔和的影子，浅色壁纸上也看得清 */
+    transition: opacity 0.5s var(--ease), translate 0.5s var(--ease), visibility 0s 0.5s;
+  }
+  body.clean .cclock {
+    opacity: 1;
+    visibility: visible;
+    translate: 0 0;
+    /* 等模块淡出一部分再淡入，衔接更自然 */
+    transition: opacity 0.8s var(--ease) 0.35s, translate 0.8s var(--ease) 0.35s, visibility 0s 0s;
+  }
+  .ctime {
+    font-size: clamp(64px, 10vw, 124px);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  .ctime .csec { font-size: 0.3em; font-weight: 700; margin-left: 8px; letter-spacing: 0; opacity: 0.75; }
+  .cdate { margin-top: 12px; font-size: clamp(15px, 1.8vw, 19px); font-weight: 700; opacity: 0.8; }
+
+  /* 右下角的两个圆形按钮。上面是番茄时钟，下面是 C（切换清爽模式）。
+     平时完全透明；鼠标靠近右下角时，JS 给 .corner 加上 .near，它们才浮现 */
+  .corner {
+    position: fixed;
+    right: 24px;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    z-index: 110;
+    display: flex;
+    flex-direction: column;     /* 竖着排：DOM 里先写的在上面 */
+    gap: 12px;
+  }
+  .cbtn {
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    border-radius: 50%;         /* 覆盖 .glass 的大圆角，变成正圆 */
+    display: grid;
+    place-items: center;
+    color: var(--text);
+    font: inherit;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;       /* 隐藏时不挡住后面的东西 */
+    translate: 0 8px;
+    transition: opacity 0.35s var(--ease), translate 0.35s var(--ease), transform 0.3s var(--ease);
+  }
+  .cbtn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2;
+              stroke-linecap: round; stroke-linejoin: round; }
+  .cbtn:hover { transform: scale(1.1); }
+  .cbtn:active { transform: scale(0.94); }
+  .corner.near #clean-btn,
+  .cbtn:focus-visible { opacity: 1; pointer-events: auto; translate: 0 0; }
+  /* 番茄时钟按钮：只有清爽模式下 + 鼠标靠近才显示 */
+  body:not(.clean) #pomo-btn { visibility: hidden; }
+  body.clean .corner.near #pomo-btn { opacity: 1; pointer-events: auto; translate: 0 0; }
+  .cbtn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+  /* ---------- 9.6 番茄时钟窗口 ----------
+     用 left / top 定位（拖动时 JS 会改它们）；一开始靠 right / bottom 停在右下角 */
+  .pomo {
+    position: fixed;
+    right: 24px;
+    bottom: 150px;              /* 在两个按钮上方 */
+    z-index: 120;
+    width: 264px;
+    padding: 20px 22px 22px;
+    border-radius: 24px;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;         /* 触屏拖动时不触发页面滚动 */
+    opacity: 0;
+    visibility: hidden;
+    scale: 0.96;
+    translate: 0 10px;
+    transition: opacity 0.4s var(--ease), scale 0.4s var(--ease), translate 0.4s var(--ease), visibility 0s 0.4s;
+  }
+  .pomo.open {
+    opacity: 1;
+    visibility: visible;
+    scale: 1;
+    translate: 0 0;
+    transition: opacity 0.4s var(--ease), scale 0.4s var(--ease), translate 0.4s var(--ease), visibility 0s 0s;
+  }
+  .pomo.dragging { cursor: grabbing; box-shadow: 0 28px 64px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+
+  .pomo-head { font-size: 14px; font-weight: 900; color: var(--text-soft); margin-bottom: 14px; }
+  .pomo-close {
+    position: absolute;
+    top: 12px; right: 12px;
+    width: 28px; height: 28px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    color: var(--text-soft);
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.25s, color 0.25s;
+  }
+  .pomo-close:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+  .pomo-close svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+  .pomo-close:focus-visible { outline: 2px solid #fff; }
+
+  /* 窗口里两个状态叠在同一处（和日程的写法一样），用 data-phase 切换：
+       idle = 输入分钟数   work = 专注倒计时   break = 休息倒计时 */
+  .pomo-body { display: grid; }
+  .pomo-body > * {
+    grid-area: 1 / 1;
+    transition: opacity 0.35s var(--ease), translate 0.35s var(--ease), visibility 0s;
+  }
+  .pomo[data-phase="idle"] .pomo-run,
+  .pomo:not([data-phase="idle"]) .pomo-ask {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.35s var(--ease), translate 0.35s var(--ease), visibility 0s 0.35s;
+  }
+  .pomo[data-phase="idle"] .pomo-run { translate: 0 6px; }
+  .pomo:not([data-phase="idle"]) .pomo-ask { translate: 0 -6px; }
+
+  .pomo-sub { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+  .pomo-ask input {
+    width: 100%;
+    padding: 12px 16px;
+    font: inherit;
+    font-size: 15px;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    outline: none;
+    cursor: text;
+    user-select: text;
+    transition: background 0.3s, box-shadow 0.3s, border-color 0.3s;
+  }
+  .pomo-ask input::placeholder { color: var(--text-soft); }
+  .pomo-ask input:focus {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.30);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.10);
+  }
+  /* 输入不合法时，输入框左右抖一下 */
+  @keyframes shake {
+    20% { translate: -6px 0; }
+    40% { translate: 5px 0; }
+    60% { translate: -4px 0; }
+    80% { translate: 2px 0; }
+  }
+  .pomo-ask input.shake { animation: shake 0.35s; }
+
+  .pomo-phase { font-size: 14px; font-weight: 700; color: var(--text-soft); margin-bottom: 4px; }
+  .pomo-time { font-size: 56px; font-weight: 900; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .pomo-track { margin-top: 14px; height: 5px; border-radius: 99px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+  .pomo-fill { height: 100%; width: 0%; border-radius: 99px; background: #fff; transition: background 0.5s; }
+  .pomo[data-phase="break"] .pomo-fill { background: #9be7c4; }   /* 休息时进度条变成淡绿色 */
+
+  /* 屏幕正上方的提示条（"Claude提醒你该休息了"） */
+  .toast {
+    position: fixed;
+    top: calc(22px + env(safe-area-inset-top, 0px));
+    left: 50%;
+    z-index: 130;
+    padding: 13px 26px;
+    border-radius: 999px;
+    font-size: 16px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;                /* 点一下可以关掉 */
+    opacity: 0;
+    visibility: hidden;
+    translate: -50% -14px;
+    transition: opacity 0.45s var(--ease), translate 0.45s var(--ease), visibility 0s 0.45s;
+  }
+  .toast.show {
+    opacity: 1;
+    visibility: visible;
+    translate: -50% 0;
+    transition: opacity 0.45s var(--ease), translate 0.45s var(--ease), visibility 0s 0s;
+  }
+
+  /* ---------- 10. 入场动画（只做一次） ----------
+     模块按顺序从下方浮现。--i 是顺序号（在 HTML 里写），越小越先出现。 */
+  .reveal {
+    opacity: 0;
+    translate: 0 26px;       /* 用 translate 属性，不会和搜索栏的 transform 打架 */
+    transition: opacity 0.9s var(--ease), translate 0.9s var(--ease);
+    transition-delay: calc(var(--i) * 0.13s + 0.25s);
+  }
+  body.ready .reveal { opacity: 1; translate: 0 0; }
+
+  /* ---------- 11. 手机 / 窄屏：全部改成单列，上下排 ---------- */
+  @media (max-width: 860px) {
+    .page { grid-template-columns: 1fr; padding: 28px 16px 170px; }
+    .clockcal { grid-template-columns: 1fr; }
+    .calendar { padding-left: 0; border-left: none; padding-top: 22px; border-top: 1px solid var(--glass-border); }
+  }
+
+  /* ---------- 12. 系统开了"减少动画"时，尊重它 ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+    .bg { transform: none; filter: none; }
+    .reveal { opacity: 1; translate: none; }
+  }
+</style>
+</head>
+
+<body>
+  <!-- 背景图层 -->
+  <div class="bg"></div>
+
+  <main class="page">
+
+    <!-- ===== 模块①：个人信息（左上角） ===== -->
+    <section class="profile glass spot reveal" style="--i:0">
+      <!-- 头像：【改这里】把 avatar.jpg 换成你上传的头像文件名。
+           没传的时候会显示"海"字渐变圆；onerror 的意思是"图片加载失败就把它去掉" -->
+      <div class="profile-top">
+        <div class="avatar">
+          <span>海</span>
+          <img src="avatar.jpg" alt="头像" onerror="this.remove()">
+        </div>
+        <div>
+          <h1>欢迎，海参</h1>
+          <!-- 每日金句：由 script 从 hitokoto 接口取来填进去。点一下可以换一句 -->
+          <p class="quote" id="quote" title="点击换一句">
+            <span id="quote-text">正在获取今日金句…</span>
+            <small id="quote-from"></small>
+          </p>
+        </div>
+      </div>
+
+      <!-- 今日日程：同一个位置有两种状态（样式见 CSS 的 6.5）
+           ① 没写：显示提示 + 输入框，按 Enter 确认
+           ② 写好：提示淡出，显示"今天要做的事"和你写的内容（不能再改）
+           当天再打开会保留，第二天自动清空。逻辑在 script 的 C2 部分。 -->
+      <div class="todo" id="todo">
+        <form class="todo-ask" id="todo-form" autocomplete="off">
+          <div class="todo-ask-title">今天要做些什么？</div>
+          <!-- maxlength 是最多能输入多少字，想放宽就改这个数字 -->
+          <input type="text" id="todo-input" maxlength="60" placeholder="写完按 Enter 确认" aria-label="今天要做些什么">
+        </form>
+        <div class="todo-done" aria-live="polite">
+          <div class="todo-done-label">今天要做的事</div>
+          <div class="todo-item">
+            <!-- 勾选框：点一下表示完成。里面的 svg 是那个"勾"，平时被藏起来 -->
+            <button type="button" class="check" id="todo-check" aria-label="标记为已完成">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" pathLength="1"></path></svg>
+            </button>
+            <!-- 文字外面包一层 span.strike，完成时它会被"划线" -->
+            <div class="todo-done-text"><span class="strike" id="todo-text"></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 模块②：时间 + 日历（右上角，左右各一半） ===== -->
+    <section class="clockcal glass spot reveal" style="--i:1">
+      <div class="clock">
+        <div class="time"><span id="hm">00:00</span><span class="sec" id="sec">00</span></div>
+        <div class="weekday" id="weekday">星期一</div>
+        <div class="fulldate" id="fulldate"></div>
+      </div>
+      <div class="calendar">
+        <div class="cal-title" id="cal-title">本月</div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+    </section>
+
+    <!-- ===== 模块③：常用网站（下面一整行） ===== -->
+    <section class="site-panel glass spot reveal" style="--i:2">
+      <h2 class="panel-title">常用网站</h2>
+      <nav class="sites" id="sites" aria-label="常用网站"></nav>
+    </section>
+
+    <!--
+      想再加一个模块？复制下面这一整段，去掉首尾的注释符号，改里面的内容即可。
+      它会出现在最下面，页面就会变长、可以往下滑了。
+
+      <section class="site-panel glass spot reveal" style="--i:3">
+        <h2 class="panel-title">我的新模块</h2>
+        <p>这里写内容</p>
+      </section>
+    -->
+
+  </main>
+
+  <!-- ===== 模块④：底部搜索栏（固定在屏幕最下方，始终在最上层） =====
+       提交后用 Google 搜索。想换百度：action 改成 https://www.baidu.com/s ，
+       并把 input 里的 name="q" 改成 name="wd" -->
+  <form class="searchbar glass spot reveal" style="--i:3"
+        action="https://www.google.com/search" method="get">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
+    </svg>
+    <input type="text" name="q" id="q" placeholder="搜索，或按 / 键快速聚焦" autocomplete="off" aria-label="搜索">
+  </form>
+
+  <!-- ===== 清爽模式：屏幕正上方的时钟 =====
+       平时是隐藏的；进入清爽模式后淡入。没有玻璃底，直接写在壁纸上。
+       里面的数字由 script 的 tick() 和左边模块里的时钟一起更新。 -->
+  <div class="cclock" aria-hidden="true">
+    <div class="ctime"><span id="chm">00:00</span><span class="csec" id="csec">00</span></div>
+    <div class="cdate" id="cdate"></div>
+  </div>
+
+  <!-- ===== 右下角按钮（平时透明，鼠标靠近才浮现） =====
+       上面：番茄时钟（只在清爽模式下出现）   下面：C（切换清爽模式，也可以直接按键盘 C） -->
+  <div class="corner" id="corner">
+    <button type="button" class="cbtn glass spot" id="pomo-btn" title="番茄时钟" aria-label="打开或关闭番茄时钟">
+      <!-- 一个小秒表图标（SVG，不需要额外图片） -->
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="13.5" r="7.5"></circle><path d="M12 9.5v4l2.5 2"></path><path d="M9.5 2.5h5"></path>
+      </svg>
+    </button>
+    <button type="button" class="cbtn glass spot" id="clean-btn" title="清爽模式（按 C）" aria-label="切换清爽模式" aria-pressed="false">C</button>
+  </div>
+
+  <!-- ===== 番茄时钟窗口（可拖动） =====
+       data-phase 表示现在的阶段，由 script 来改：
+         idle = 等你输入分钟数    work = 专注倒计时    break = 休息倒计时
+       CSS 会根据它自动切换显示哪一块。 -->
+  <div class="pomo glass spot" id="pomo" data-phase="idle" role="dialog" aria-label="番茄时钟">
+    <div class="pomo-head">番茄时钟</div>
+    <!-- 右上角的 X：关闭窗口（计时不会停） -->
+    <button type="button" class="pomo-close" id="pomo-close" aria-label="关闭番茄时钟">
+      <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12"></path></svg>
+    </button>
+
+    <div class="pomo-body">
+      <!-- 状态一：输入这一轮要专注几分钟，按 Enter 开始 -->
+      <form class="pomo-ask" id="pomo-form" autocomplete="off">
+        <div class="pomo-sub">这一轮专注多少分钟？</div>
+        <input type="text" id="pomo-input" inputmode="numeric" maxlength="3"
+               placeholder="输入整数，按 Enter 开始" aria-label="专注分钟数">
+      </form>
+      <!-- 状态二：倒计时（专注和休息共用这一块，只是文字和进度条颜色不同） -->
+      <div class="pomo-run">
+        <div class="pomo-phase" id="pomo-phase">专注中</div>
+        <div class="pomo-time" id="pomo-time">00:00</div>
+        <div class="pomo-track"><div class="pomo-fill" id="pomo-fill"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 屏幕正上方的提示条：专注时间到了会在这里提示（点一下可以关掉） -->
+  <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  /* ============================================================
+     【改这里】常用网站列表
+     每一行一个网站：
+       { name: "显示的名字", url: "网址", icon: "图标文件名" },
+     图标是你要上传到 GitHub 的图片，和 index.html 放在同一层。
+     图标还没传也没关系，会先显示名字的第一个字（带渐变色）。
+     想加网站：复制一行改一改；想删：删掉整行；每行末尾的逗号别漏。
+     ============================================================ */
+  const SITES = [
+    { name: "哔哩哔哩",     url: "https://www.bilibili.com",                icon: "bilibili.png" },
+    // 注意：云星穹铁道的网址我不确定对不对，如果打不开，请告诉我你平时用的入口
+    { name: "云星穹铁道",   url: "https://sr.mihoyo.com/cloud",             icon: "starrail.png" },
+    { name: "百度贴吧",     url: "https://tieba.baidu.com",                 icon: "tieba.png" },
+    { name: "Claude",       url: "https://claude.ai",                       icon: "claude.png" },
+    { name: "ChatGPT",      url: "https://chatgpt.com",                     icon: "gpt.png" },
+    { name: "SLS",          url: "https://vle.learning.moe.edu.sg",         icon: "sls.png" },
+    { name: "Google 课堂",  url: "https://classroom.google.com",            icon: "classroom.png" },
+  ];
+
+  /* ---------- A. 工具：生成"首字母渐变图标"（图片没传或加载失败时用） ---------- */
+  function letterIcon(box, name) {
+    const ch = name.charAt(0).toUpperCase();
+    const hue = (ch.charCodeAt(0) * 47) % 360;   // 同一个字永远得到同一种颜色
+    box.textContent = ch;
+    box.style.background = `linear-gradient(135deg, hsl(${hue} 75% 62%), hsl(${(hue + 40) % 360} 75% 50%))`;
+  }
+
+  /* ---------- B. 生成网站图标卡片 ---------- */
+  const sitesBox = document.getElementById("sites");
+  SITES.forEach((s) => {
+    const a = document.createElement("a");
+    a.className = "tile spot";      // spot：让每个小卡片也有鼠标聚光
+    a.href = s.url;
+
+    const icon = document.createElement("div");
+    icon.className = "icon";
+    if (s.icon) {
+      const img = document.createElement("img");
+      img.src = s.icon;
+      img.alt = "";
+      img.onerror = () => { img.remove(); letterIcon(icon, s.name); };  // 图片加载失败 → 改用首字母
+      icon.appendChild(img);
+    } else {
+      letterIcon(icon, s.name);
+    }
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = s.name;
+
+    a.append(icon, name);
+    sitesBox.appendChild(a);
+  });
+
+  /* ---------- C. 每日金句（hitokoto 接口） ----------
+     逻辑：同一天内先用缓存（所以是"每日"金句）；点击句子可以手动换一句。
+     接口会返回一个对象：hitokoto = 句子，from = 出处，from_who = 作者。
+     想限定类型，可以把网址改成 https://v1.hitokoto.cn/?c=d&c=i （d=文学 i=诗词，更多类型见官网文档） */
+  const quoteBox  = document.getElementById("quote");
+  const quoteText = document.getElementById("quote-text");
+  const quoteFrom = document.getElementById("quote-from");
+
+  const todayKey = () => {
+    const d = new Date();
+    return "hitokoto-" + d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+  };
+
+  function showQuote(d) {
+    quoteText.textContent = d.hitokoto;
+    quoteFrom.textContent = d.from
+      ? "—— " + (d.from_who ? d.from_who + " · " : "") + d.from
+      : "";
+  }
+
+  async function loadQuote(forceNew) {
+    // 先看今天有没有存过
+    if (!forceNew) {
+      try {
+        const saved = localStorage.getItem(todayKey());
+        if (saved) { showQuote(JSON.parse(saved)); return; }
+      } catch (e) { /* 读缓存失败就忽略，继续联网取 */ }
+    }
+    try {
+      const res = await fetch("https://v1.hitokoto.cn/");
+      const data = await res.json();
+      showQuote(data);
+      try { localStorage.setItem(todayKey(), JSON.stringify(data)); } catch (e) {}
+    } catch (err) {
+      // 联网失败：给一句保底的话，并提示怎么办
+      showQuote({ hitokoto: "今天也要好好加油。", from: "（金句暂时获取失败，点击重试）" });
+    }
+  }
+  loadQuote(false);
+
+  // 点击换一句：先淡出，换完再淡入（这是"你操作后的反馈动画"）
+  quoteBox.addEventListener("click", async () => {
+    quoteBox.classList.add("swap");
+    await new Promise((r) => setTimeout(r, 250));
+    await loadQuote(true);
+    quoteBox.classList.remove("swap");
+  });
+
+  /* ---------- C2. 今日日程 ----------
+     规则：
+       - 输入后按 Enter：提示淡出，内容以大字显示，且不能再修改
+       - 内容存在浏览器的 localStorage 里，key 带着今天的日期
+       - 当天再打开，读到今天的 key → 直接显示内容
+       - 第二天日期变了，key 对不上 → 自动回到"今天要做些什么？"，旧内容也会被清掉
+     注意：localStorage 存在你这台浏览器里，换一台设备不会同步。 */
+  const todoBox   = document.getElementById("todo");
+  const todoForm  = document.getElementById("todo-form");
+  const todoInput = document.getElementById("todo-input");
+  const todoText  = document.getElementById("todo-text");
+
+  // 今天的 key，例如 "todo-2026-10-16"
+  const todoKey = () => {
+    const d = new Date();
+    return "todo-" + d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+  };
+
+  // 页面打开时 / 过了午夜时调用：看看今天有没有存过
+  function initTodo() {
+    let saved = null;
+    try {
+      saved = localStorage.getItem(todoKey());
+      // 顺手清掉以前日子留下的内容
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith("todo-") && k !== todoKey()) localStorage.removeItem(k);
+      });
+    } catch (e) { /* 读不了就当没存过 */ }
+
+    // 先把"完成动画"的状态清掉，保证每次都从干净的状态开始
+    todoBox.classList.remove("completing", "striking");
+
+    if (saved) {
+      todoText.textContent = saved;        // 用 textContent，输入什么字符都安全
+      todoBox.classList.add("done");
+    } else {
+      todoText.textContent = "";
+      todoInput.value = "";
+      todoBox.classList.remove("done");
+    }
+  }
+
+  // 小工具：等待 ms 毫秒（配合 await 就能把动画一步一步排队）
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 点击勾选框 = 完成。时序：
+  //   ① 方框变白、勾被画出来         （completing）
+  //   ② 0.45 秒后文字开始被划线      （striking）
+  //   ③ 划线开始 5 秒后，整块淡出，输入框重新出现
+  // 同时把今天存的内容删掉：完成了就算完成了，刷新页面也不会再冒出来
+  const todoCheck = document.getElementById("todo-check");
+  todoCheck.addEventListener("click", async () => {
+    if (todoBox.classList.contains("completing")) return;   // 防止连点
+
+    todoBox.classList.add("completing");
+    try { localStorage.removeItem(todoKey()); } catch (e) {}
+
+    await wait(450);
+    todoBox.classList.add("striking");
+
+    await wait(5000);
+    todoBox.classList.remove("done");        // 触发淡出；输入框会稍后淡入（见 CSS）
+
+    await wait(700);                         // 等淡出完全结束，再悄悄把状态复位
+    todoBox.classList.remove("completing", "striking");
+    todoText.textContent = "";
+    todoInput.value = "";
+  });
+
+  // 按 Enter 提交
+  todoForm.addEventListener("submit", (e) => {
+    e.preventDefault();                    // 阻止表单默认的"刷新页面"
+    const v = todoInput.value.trim();
+    if (!v) return;                        // 什么都没写就不处理
+    todoText.textContent = v;
+    try { localStorage.setItem(todoKey(), v); } catch (err) {}
+    todoInput.blur();
+    todoBox.classList.add("done");         // 触发 CSS 里的淡出/淡入切换
+  });
+
+  /* ---------- D. 时钟 + 日历 ---------- */
+  const hmEl = document.getElementById("hm");
+  const secEl = document.getElementById("sec");
+  const weekdayEl = document.getElementById("weekday");
+  const fulldateEl = document.getElementById("fulldate");
+  const calTitle = document.getElementById("cal-title");
+  const calGrid = document.getElementById("cal-grid");
+  // 清爽模式下屏幕正上方的时钟（必须在 tick() 第一次运行之前找到它们）
+  const chmEl = document.getElementById("chm");
+  const csecEl = document.getElementById("csec");
+  const cdateEl = document.getElementById("cdate");
+
+  const pad = (n) => String(n).padStart(2, "0");   // 5 → "05"
+  const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
+
+  // 画日历。每周从"周一"开始。today 那一天会加上 .today 样式（高亮）
+  function renderCalendar(now) {
+    const y = now.getFullYear();
+    const m = now.getMonth();           // 注意：月份从 0 开始，0 = 1月
+    const today = now.getDate();
+
+    calTitle.textContent = y + "年" + (m + 1) + "月";
+    calGrid.innerHTML = "";
+
+    // 先放上表头：一 二 三 四 五 六 日
+    ["一", "二", "三", "四", "五", "六", "日"].forEach((w) => {
+      const h = document.createElement("div");
+      h.className = "wd";
+      h.textContent = w;
+      calGrid.appendChild(h);
+    });
+
+    // 这个月 1 号是星期几？用来决定前面要空几格（周一为第一列）
+    const offset = (new Date(y, m, 1).getDay() + 6) % 7;
+    for (let i = 0; i < offset; i++) calGrid.appendChild(document.createElement("div"));
+
+    // 这个月一共多少天？（下个月的第 0 天 = 本月最后一天）
+    const total = new Date(y, m + 1, 0).getDate();
+    for (let d = 1; d <= total; d++) {
+      const cell = document.createElement("div");
+      cell.className = "day" + (d === today ? " today" : "");
+      cell.textContent = d;
+      calGrid.appendChild(cell);
+    }
+  }
+
+  let lastDay = -1;
+  function tick() {
+    const now = new Date();
+    hmEl.textContent = pad(now.getHours()) + ":" + pad(now.getMinutes());
+    secEl.textContent = pad(now.getSeconds());
+    weekdayEl.textContent = "星期" + WEEK[now.getDay()];
+    fulldateEl.textContent = now.getFullYear() + "年" + (now.getMonth() + 1) + "月" + now.getDate() + "日";
+
+    // 同步给清爽模式的时钟
+    chmEl.textContent = hmEl.textContent;
+    csecEl.textContent = secEl.textContent;
+    cdateEl.textContent = (now.getMonth() + 1) + "月" + now.getDate() + "日 · 星期" + WEEK[now.getDay()];
+
+    // 日期变了（比如过了午夜）才重画日历，平时不重复画
+    if (now.getDate() !== lastDay) {
+      lastDay = now.getDate();
+      renderCalendar(now);
+      initTodo();   // 新的一天：日程也一起检查/清除（第一次打开页面也会走这里）
+    }
+  }
+  tick();
+  setInterval(tick, 1000);   // 每秒刷新一次
+
+  /* ---------- E. 鼠标聚光：把鼠标位置告诉每个 .spot ----------
+     原理：算出鼠标相对于这个元素左上角的位置，写进 --mx / --my，
+     CSS 里的 radial-gradient 就会以这个点为中心发光。 */
+  document.addEventListener("mousemove", (e) => {
+    document.querySelectorAll(".spot").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", (e.clientX - r.left) + "px");
+      el.style.setProperty("--my", (e.clientY - r.top) + "px");
+    });
+  });
+
+  /* ---------- F. 键盘：按 "/" 直接跳到搜索框，Esc 退出 ---------- */
+  const q = document.getElementById("q");
+  document.addEventListener("keydown", (e) => {
+    // 只有当你"不在任何输入框里"时，按 / 才跳到搜索框（不然在日程里打"/"会被抢走）
+    // （清爽模式下搜索栏是隐藏的，所以这时按 / 不处理）
+    if (e.key === "/" && document.activeElement.tagName !== "INPUT" && !document.body.classList.contains("clean")) {
+      e.preventDefault(); q.focus();
+    }
+    if (e.key === "Escape") q.blur();
+  });
+
+  /* ============================================================
+     H. 清爽模式
+     原理非常简单：给 <body> 加上或去掉 class="clean"，
+     所有"清爽模式下的样子"都写在 CSS 的 body.clean 规则里（见 CSS 9.5）。
+     切换方式：点右下角的 C 按钮，或者按键盘上的 C。
+     ============================================================ */
+  const corner   = document.getElementById("corner");
+  const cleanBtn = document.getElementById("clean-btn");
+  const isClean  = () => document.body.classList.contains("clean");
+
+  function setClean(on) {
+    // 如果光标还停在某个输入框里，先让它失焦，免得模块隐藏后还在抢键盘
+    const a = document.activeElement;
+    if (a && a.tagName === "INPUT") a.blur();
+
+    document.body.classList.toggle("clean", on);
+    cleanBtn.setAttribute("aria-pressed", String(on));
+
+    // 退出清爽模式 = 番茄钟停止（你要求的规则）
+    if (!on) stopPomo();
+  }
+  const toggleClean = () => setClean(!isClean());
+
+  cleanBtn.addEventListener("click", toggleClean);
+
+  // 键盘 C 切换。注意：你正在输入框里打字时不能触发，否则写"cat"会把模式切来切去
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "c" && e.key !== "C") return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;   // Ctrl+C 复制等组合键不处理
+    const tag = document.activeElement.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    toggleClean();
+  });
+
+  // 鼠标靠近右下角时，给 .corner 加上 .near，按钮就会浮现（CSS 里写了浮现的样子）
+  // dx / dy = 鼠标离屏幕右边 / 下边有多远（像素）。
+  // 清爽模式下多一个番茄钟按钮，所以往上要多留一些距离。
+  document.addEventListener("mousemove", (e) => {
+    const dx = window.innerWidth - e.clientX;
+    const dy = window.innerHeight - e.clientY;
+    corner.classList.toggle("near", dx < 150 && dy < (isClean() ? 200 : 120));
+  });
+  // 鼠标离开浏览器窗口时，也把按钮藏起来
+  document.documentElement.addEventListener("mouseleave", () => corner.classList.remove("near"));
+
+  /* ============================================================
+     I. 番茄时钟
+     流程：输入分钟 → 按 Enter → 专注倒计时 → 响铃 + 顶部提示
+           → 固定休息 5 分钟 → 响铃 → 再次弹出输入框
+     ============================================================ */
+  const BREAK_MIN = 5;      // 【改这里】休息时长（分钟）
+  const POMO_MAX  = 999;    // 【改这里】一轮专注最多允许输入多少分钟
+
+  const pomoEl    = document.getElementById("pomo");
+  const pomoBtn   = document.getElementById("pomo-btn");
+  const pomoClose = document.getElementById("pomo-close");
+  const pomoForm  = document.getElementById("pomo-form");
+  const pomoInput = document.getElementById("pomo-input");
+  const pomoPhase = document.getElementById("pomo-phase");
+  const pomoTime  = document.getElementById("pomo-time");
+  const pomoFill  = document.getElementById("pomo-fill");
+  const toastEl   = document.getElementById("toast");
+
+  let pomoTimer = null;   // 定时器编号
+  let pomoEnd = 0;        // 这一阶段"结束的时刻"（毫秒时间戳）
+  let pomoTotal = 0;      // 这一阶段总共多少毫秒
+  let toastTimer = null;
+
+  /* ----- 铃声：用浏览器自带的声音合成器"现场造"一个钟声，不需要音频文件 -----
+     浏览器规定：必须在你操作过页面（比如按 Enter）之后才允许发声，
+     所以我们在"开始计时"那一刻就把声音系统准备好。 */
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }
+  // 敲一下钟：把几个不同频率的正弦波叠在一起，每个都从响变到静，就像金属的余音
+  function bell(t, freq) {
+    [[1, 0.5], [2.76, 0.22], [5.4, 0.1]].forEach(([mult, vol]) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq * mult;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(vol * 0.35, t + 0.01);   // 0.35 是总音量，嫌吵就改小
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + 1.9);
+    });
+  }
+  // 连敲 count 下，每下间隔 1.1 秒
+  function ring(count, freq) {
+    ensureAudio();
+    if (!audioCtx) return;
+    const t0 = audioCtx.currentTime + 0.05;
+    for (let i = 0; i < count; i++) bell(t0 + i * 1.1, freq);
+  }
+
+  /* ----- 屏幕正上方的提示条 ----- */
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, 10000);   // 10 秒后自动消失
+  }
+  function hideToast() {
+    toastEl.classList.remove("show");
+    clearTimeout(toastTimer);
+  }
+  toastEl.addEventListener("click", hideToast);   // 点一下也能关
+
+  /* ----- 窗口的打开 / 关闭（只是显示和隐藏，不影响计时） ----- */
+  function openPomo() {
+    pomoEl.classList.add("open");
+    // 如果正等着输入，就直接把光标放进输入框
+    if (pomoEl.dataset.phase === "idle") requestAnimationFrame(() => pomoInput.focus());
+  }
+  function closePomo() {
+    pomoEl.classList.remove("open");
+    if (document.activeElement === pomoInput) pomoInput.blur();
+  }
+  pomoBtn.addEventListener("click", () => {
+    pomoEl.classList.contains("open") ? closePomo() : openPomo();
+  });
+  pomoClose.addEventListener("click", closePomo);
+
+  /* ----- 倒计时 -----
+     不是"每秒减 1"，而是记下"结束的时刻"，每次用 结束时刻 - 现在 来算还剩多久。
+     这样即使浏览器把后台标签页的定时器拖慢，时间也不会走偏。 */
+  function startPhase(phase, minutes) {
+    pomoEl.dataset.phase = phase;                          // "work" 或 "break"，CSS 据此切换显示
+    pomoPhase.textContent = phase === "work" ? "专注中" : "休息中";
+    pomoTotal = minutes * 60 * 1000;
+    pomoEnd = Date.now() + pomoTotal;
+    clearInterval(pomoTimer);
+    pomoTimer = setInterval(pomoTick, 250);
+    pomoTick();
+  }
+
+  function pomoTick() {
+    const left = Math.max(0, pomoEnd - Date.now());
+    const s = Math.ceil(left / 1000);                      // 向上取整：还剩 0.3 秒也显示 00:01
+    pomoTime.textContent = pad(Math.floor(s / 60)) + ":" + pad(s % 60);
+    pomoFill.style.width = ((1 - left / pomoTotal) * 100) + "%";   // 进度条
+    if (left <= 0) {
+      clearInterval(pomoTimer);
+      pomoTimer = null;
+      onPhaseEnd();
+    }
+  }
+
+  function onPhaseEnd() {
+    if (pomoEl.dataset.phase === "work") {
+      // 专注结束：响铃 + 屏幕上方提示 + 自动进入固定的休息倒计时
+      // （窗口关着也一样：提示条是独立的，不依赖窗口）
+      ring(3, 880);
+      showToast("Claude提醒你该休息了");
+      startPhase("break", BREAK_MIN);
+    } else {
+      // 休息结束：响铃（音调更高一点），回到输入状态，并把窗口弹出来
+      ring(2, 1175);
+      resetPomo();
+      openPomo();
+    }
+  }
+
+  // 回到"等你输入"的初始状态
+  function resetPomo() {
+    pomoEl.dataset.phase = "idle";
+    pomoInput.value = "";
+    pomoTime.textContent = "00:00";
+    pomoFill.style.width = "0%";
+  }
+
+  // 彻底停止（退出清爽模式时调用）：停表、复位、关窗口、收起提示条
+  function stopPomo() {
+    clearInterval(pomoTimer);
+    pomoTimer = null;
+    resetPomo();
+    closePomo();
+    hideToast();
+  }
+
+  // 输入分钟数，按 Enter 开始
+  pomoForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const raw = pomoInput.value.trim();
+    const n = parseInt(raw, 10);
+    // 必须是纯数字的整数，并且在 1 ~ POMO_MAX 之间；否则输入框抖一下
+    if (!/^\d+$/.test(raw) || n < 1 || n > POMO_MAX) {
+      pomoInput.classList.remove("shake");
+      void pomoInput.offsetWidth;          // 小技巧：强制重新计算，让抖动动画能重复播放
+      pomoInput.classList.add("shake");
+      return;
+    }
+    ensureAudio();                          // 趁"用户刚按过 Enter"，把声音系统准备好
+    pomoInput.blur();
+    startPhase("work", n);
+  });
+
+  /* ----- 拖动窗口 -----
+     在窗口的空白处按住鼠标拖，就能移动（点输入框和按钮不会触发拖动）。
+     原理：按下时记下"鼠标离窗口左上角多远"，移动时让窗口左上角 = 鼠标位置 - 那段距离。 */
+  pomoEl.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("input, button")) return;
+    const r = pomoEl.getBoundingClientRect();
+    // 第一次拖动：把"靠右下角定位"换成"用 left / top 定位"，后面才能随意移动
+    pomoEl.style.left = r.left + "px";
+    pomoEl.style.top = r.top + "px";
+    pomoEl.style.right = "auto";
+    pomoEl.style.bottom = "auto";
+    const offX = e.clientX - r.left;
+    const offY = e.clientY - r.top;
+    pomoEl.setPointerCapture(e.pointerId);   // 鼠标拖出窗口范围也继续跟随
+    pomoEl.classList.add("dragging");
+
+    const move = (ev) => {
+      // 限制在屏幕范围内，别拖丢了
+      const x = Math.min(Math.max(0, ev.clientX - offX), window.innerWidth - r.width);
+      const y = Math.min(Math.max(0, ev.clientY - offY), window.innerHeight - r.height);
+      pomoEl.style.left = x + "px";
+      pomoEl.style.top = y + "px";
+    };
+    const up = () => {
+      pomoEl.classList.remove("dragging");
+      pomoEl.removeEventListener("pointermove", move);
+      pomoEl.removeEventListener("pointerup", up);
+      pomoEl.removeEventListener("pointercancel", up);
+    };
+    pomoEl.addEventListener("pointermove", move);
+    pomoEl.addEventListener("pointerup", up);
+    pomoEl.addEventListener("pointercancel", up);
+  });
+
+  // 缩小浏览器窗口时，如果窗口被挤到屏幕外，把它拉回来
+  window.addEventListener("resize", () => {
+    if (!pomoEl.style.left) return;           // 还没拖动过就不用管
+    const r = pomoEl.getBoundingClientRect();
+    pomoEl.style.left = Math.min(Math.max(0, r.left), Math.max(0, window.innerWidth - r.width)) + "px";
+    pomoEl.style.top = Math.min(Math.max(0, r.top), Math.max(0, window.innerHeight - r.height)) + "px";
+  });
+
+  /* ---------- G. 入场动画 ---------- */
+  // 等页面画好后给 body 加 "ready"，CSS 里的入场动画就开始播放
+  requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("ready")));
+  // 播完后去掉 .reveal，免得它的过渡设置影响之后的悬停/聚焦动画
+  setTimeout(() => document.querySelectorAll(".reveal").forEach((el) => el.classList.remove("reveal")), 2400);
+</script>
+</body>
+</html>

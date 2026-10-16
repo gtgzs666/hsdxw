@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>导航页</title>
+
+<!-- 标题用的粗体字体（来自 Google Fonts，需要联网；加载失败会自动换成系统字体） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@900&display=swap" rel="stylesheet">
+
+<!--
+  ============================================================
+  整个文件分三块：
+    1. <style>  —— 外观（颜色、黑色玻璃、鼠标高亮、动画）
+    2. <body>   —— 页面里有哪些模块（个人信息、时间日历、常用站点、音乐、搜索栏）
+    3. <script> —— 逻辑（时钟、日历、每日金句、快捷方式、鼠标高亮跟随）
+
+  最常改的地方都标了【改这里】：
+    - 背景图文件名           （style 里的 .bg）
+    - 头像文件名             （body 里的 avatar.jpg）
+    - 常用网站列表           （script 最上面的 LINKS）
+    - 日历一周从周几开始     （script 里的 WEEK_START）
+  ============================================================
+-->
+
+<style>
+  /* ---------- 1. 全局变量：配色、玻璃程度都在这里调 ---------- */
+  :root {
+    --glass-bg: rgba(12, 12, 16, 0.58);          /* 黑色玻璃的底色：最后一个数字越大越黑 (0~1) */
+    --glass-border: rgba(255, 255, 255, 0.10);   /* 玻璃的细边 */
+    --glass-blur: 24px;                          /* 磨砂程度：越大越模糊 */
+    --text: #ffffff;
+    --text-soft: rgba(255, 255, 255, 0.68);
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);      /* 动画手感：先快后慢，顺滑 */
+    --radius: 28px;                              /* 大模块的圆角 */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, "SF Pro Display", "Segoe UI", Roboto,
+                 "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    background: #07080d;       /* 背景图加载失败时的保底色 */
+    overflow-x: hidden;
+  }
+
+  /* 所有标题共用的"粗体设计感"字体 */
+  .title {
+    font-family: "Noto Serif SC", "Songti SC", "STSong", serif;
+    font-weight: 900;          /* 900 = 最粗 */
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+
+  /* ---------- 2. 背景图层 ---------- */
+  .bg {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+
+    /* 【改这里】把 bg.jpg 换成你上传的背景图文件名。
+       三层从上到下：①压暗渐变（让黑玻璃和文字更清楚） ②你的图片 ③保底渐变（图片没传时顶上） */
+    background:
+      linear-gradient(180deg, rgba(4, 6, 14, 0.35), rgba(4, 6, 14, 0.65)),
+      url("bg.jpg") center / cover no-repeat,
+      linear-gradient(135deg, #0f1a3d 0%, #2a1a4d 50%, #4d1f3a 100%);
+
+    /* 入场动画起点：略放大 + 模糊，然后缓缓对焦 */
+    transform: scale(1.08);
+    filter: blur(18px);
+    transition: transform 1.6s var(--ease), filter 1.6s var(--ease);
+  }
+  body.ready .bg { transform: scale(1); filter: blur(0); }
+
+  /* ---------- 3. 黑色磨砂玻璃 ----------
+     给元素加 class="glass" 就变成黑色玻璃。
+     backdrop-filter = 把"元素背后的画面"模糊掉，这就是磨砂感的来源。 */
+  .glass {
+    position: relative;
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+            backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+    border: 1px solid var(--glass-border);
+    box-shadow:
+      0 18px 50px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);    /* 顶部一条细高光 */
+  }
+
+  /* ---------- 4. 鼠标周围高亮（聚光灯效果） ----------
+     原理：JS 会把鼠标在模块内的位置写进 --mx / --my 两个变量，
+     这里用 radial-gradient（圆形渐变）把光斑画在那个位置。
+     ::before 是内部的柔光，::after 是只照亮边缘的亮线。
+     .glass（大模块）和 .spot（小卡片）都会有这个效果。 */
+  .glass, .spot { position: relative; }
+
+  .glass::before, .spot::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;       /* 不挡住鼠标点击 */
+    opacity: 0;
+    transition: opacity 0.35s;
+    background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 50%),
+                rgba(255, 255, 255, 0.13), transparent 70%);
+  }
+  .glass::after, .spot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;               /* 这 1px 就是"边框"的厚度 */
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s;
+    background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%),
+                rgba(255, 255, 255, 0.75), transparent 70%);
+    /* 下面两行是"挖空中间、只留边框"的固定写法，不用理解，别改 */
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+  }
+  .glass:hover::before, .glass:hover::after,
+  .spot:hover::before,  .spot:hover::after { opacity: 1; }
+
+  /* 让模块里的内容盖在光斑上面，文字不会被光斑洗淡 */
+  .glass > *, .spot > * { position: relative; z-index: 1; }
+
+  /* ---------- 5. 页面布局：网格 ----------
+     第一行：左边个人信息（窄）+ 右边时间日历（宽）
+     第二行：常用站点（整行）
+     第三行：音乐（整行）
+     手机/窄屏时自动变成单列（见最下面的 @media） */
+  .page {
+    display: grid;
+    grid-template-columns: minmax(300px, 1fr) minmax(0, 1.7fr);
+    gap: 20px;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 36px 20px 150px;   /* 底部留出空间，不让内容被固定的搜索栏挡住 */
+  }
+  .card { border-radius: var(--radius); padding: 28px; }
+  .sites, .music { grid-column: 1 / -1; }   /* 横跨整行 */
+
+  /* ---------- 6. 个人信息模块 ---------- */
+  .profile { display: flex; gap: 22px; align-items: flex-start; }
+
+  .avatar {
+    position: relative;
+    width: 92px; height: 92px;
+    flex: none;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 40px;
+    background: linear-gradient(135deg, #6d7cff, #c86bff);   /* 没头像时显示的渐变底 */
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18), 0 10px 30px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+  }
+  /* 头像图片盖在文字上面；图片不存在时会被自动移除（见 HTML 里的 onerror），露出下面的字 */
+  .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+  .who { min-width: 0; }
+  .who h1 { font-size: clamp(30px, 3.4vw, 44px); }
+
+  .quote {
+    margin-top: 12px;
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--text-soft);
+    cursor: pointer;                       /* 点击可以换一句 */
+    transition: opacity 0.25s, color 0.25s;
+  }
+  .quote:hover { color: #fff; }
+  .quote.fade { opacity: 0; }              /* 换句子时先淡出再淡入 */
+  .quote-from { margin-top: 6px; font-size: 13px; color: var(--text-soft); opacity: 0.75; }
+
+  /* ---------- 7. 时间 + 日历模块（左右各一半） ---------- */
+  .timecal { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: center; }
+
+  .time {
+    font-size: clamp(52px, 6.4vw, 84px);
+    font-weight: 300;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;     /* 数字等宽，秒数变化不抖动 */
+  }
+  .date  { margin-top: 14px; font-size: 18px; }
+  .hello { margin-top: 6px;  font-size: 14px; color: var(--text-soft); }
+
+  .cal-half { padding-left: 26px; border-left: 1px solid var(--glass-border); }   /* 左边一条分隔线 */
+  .cal-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .cal-head .title { font-size: 26px; }
+  .cal-head small { color: var(--text-soft); font-size: 13px; }
+
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+  .cal-grid .wd { font-size: 12px; color: var(--text-soft); padding-bottom: 4px; }
+  .cal-grid .d {
+    aspect-ratio: 1;                        /* 保证每格是正方形 */
+    display: grid; place-items: center;
+    font-size: 13px;
+    border-radius: 50%;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 今天：白色实心圆 + 发光，一眼就能看到 */
+  .cal-grid .d.today {
+    background: #fff;
+    color: #111;
+    font-weight: 700;
+    box-shadow: 0 0 18px rgba(255, 255, 255, 0.55);
+  }
+
+  /* ---------- 8. 常用站点 ---------- */
+  .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .card-head .title { font-size: 26px; }
+
+  .links { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 14px; }
+
+  .tile {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 20px 10px 16px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13.5px;
+    text-align: center;
+    line-height: 1.35;
+    transition: transform 0.45s var(--ease), background 0.3s, box-shadow 0.45s var(--ease);
+  }
+  /* 鼠标移上去：上浮 + 放大一点 */
+  .tile:hover {
+    transform: translateY(-6px) scale(1.04);
+    background: rgba(255, 255, 255, 0.09);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  }
+  /* 按下去的瞬间轻轻缩一下，像按按钮 */
+  .tile:active { transform: translateY(-1px) scale(0.96); transition-duration: 0.12s; }
+  .tile:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }   /* 键盘 Tab 选中时的边框 */
+
+  .icon {
+    width: 50px; height: 50px;
+    border-radius: 16px;
+    display: grid; place-items: center;
+    font-size: 22px; font-weight: 700;
+    overflow: hidden;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+  .icon img { width: 100%; height: 100%; object-fit: cover; }
+
+  /* ---------- 9. 音乐模块 ---------- */
+  .open-link {
+    color: var(--text-soft); font-size: 13px; text-decoration: none;
+    padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--glass-border);
+    transition: color 0.25s, background 0.25s;
+  }
+  .open-link:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+
+  .player-wrap { border-radius: 18px; overflow: hidden; background: rgba(0, 0, 0, 0.3); }
+  .player-wrap iframe { display: block; width: 100%; height: 520px; border: 0; }
+
+  /* ---------- 10. 搜索栏：固定在屏幕最下方，永远在所有元素之上 ----------
+     position: fixed  = 钉在屏幕上，页面往下滑它也不动
+     z-index: 1000    = 层级很高，盖在所有模块上面
+     因为是玻璃，滑到它后面的内容会被模糊，很好看。 */
+  .search {
+    position: fixed;
+    left: 50%;
+    bottom: max(22px, env(safe-area-inset-bottom));
+    z-index: 1000;
+    width: min(560px, 90vw);
+    height: 56px;
+    padding: 0 22px;
+    border-radius: 999px;       /* 胶囊形 */
+    display: flex; align-items: center; gap: 12px;
+    transform: translateX(-50%);   /* 水平居中的固定写法 */
+    opacity: 0;                    /* 入场前透明 */
+    /* 分开写每个属性的动画：opacity 延迟 0.9s 出现，其余是交互动画 */
+    transition: opacity 0.9s var(--ease) 0.9s, width 0.5s var(--ease),
+                transform 0.5s var(--ease), box-shadow 0.3s;
+  }
+  body.ready .search { opacity: 1; }
+
+  /* 点进搜索框：变宽、微微上浮、外面出现一圈光 */
+  .search:focus-within {
+    width: min(700px, 92vw);
+    transform: translateX(-50%) translateY(-3px);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2),
+                0 0 0 4px rgba(255, 255, 255, 0.14);
+  }
+  .search svg { width: 20px; height: 20px; flex: none; opacity: 0.8; }
+  .search input {
+    flex: 1; min-width: 0;
+    background: none; border: none; outline: none;   /* 去掉浏览器默认边框，用上面的光圈代替 */
+    color: var(--text); font-size: 17px; font-family: inherit;
+  }
+  .search input::placeholder { color: var(--text-soft); }
+
+  /* ---------- 11. 入场动画（只播一次）：四个模块依次浮现 ----------
+     --i 是顺序号（HTML 里写的），数字越大出现越晚。 */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.9s var(--ease), transform 0.9s var(--ease);
+    transition-delay: calc(var(--i) * 0.14s + 0.25s);
+  }
+  body.ready .reveal { opacity: 1; transform: none; }
+
+  /* ---------- 12. 窄屏（手机/小窗口）适配：全部改成单列 ---------- */
+  @media (max-width: 860px) {
+    .page { grid-template-columns: 1fr; }
+    .timecal { grid-template-columns: 1fr; }
+    .cal-half { padding-left: 0; border-left: none; border-top: 1px solid var(--glass-border); padding-top: 22px; }
+    .profile { flex-direction: column; }
+  }
+
+  /* ---------- 13. 系统开启"减少动画"时，关闭所有动画 ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+    .bg { transform: none; filter: none; }
+    .reveal, .search { opacity: 1; transform: none; }
+    .search { transform: translateX(-50%); }
+  }
+</style>
+</head>
+
+<body>
+  <div class="bg"></div>
+
+  <main class="page">
+
+    <!-- ===== 模块 1：个人信息（左上） ===== -->
+    <section class="glass card profile reveal" style="--i:0">
+      <!-- 【改这里】把头像上传到仓库，文件名叫 avatar.jpg 即可自动显示。
+           还没上传时，会显示一个渐变圆 + 文字"海"。onerror 的意思是：图片加载失败就把它移除。 -->
+      <div class="avatar">
+        <span>海</span>
+        <img src="avatar.jpg" alt="头像" onerror="this.remove()">
+      </div>
+      <div class="who">
+        <h1 class="title">欢迎，海参</h1>
+        <!-- 每日金句：由 script 从 hitokoto 获取，点一下可以换一句 -->
+        <p class="quote" id="quote" title="点击换一句">正在获取今日金句…</p>
+        <p class="quote-from" id="quoteFrom"></p>
+      </div>
+    </section>
+
+    <!-- ===== 模块 2：时间日期 + 日历（右上，左右各一半） ===== -->
+    <section class="glass card timecal reveal" style="--i:1">
+      <div class="clock-half">
+        <div class="time" id="time">00:00</div>
+        <div class="date" id="date"></div>
+        <div class="hello" id="hello"></div>
+      </div>
+      <div class="cal-half">
+        <div class="cal-head">
+          <span class="title" id="calMonth"></span>
+          <small id="calYear"></small>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </div>
+    </section>
+
+    <!-- ===== 模块 3：常用站点（卡片由 script 根据 LINKS 自动生成） ===== -->
+    <section class="glass card sites reveal" style="--i:2">
+      <div class="card-head"><h2 class="title">常用站点</h2></div>
+      <nav class="links" id="links" aria-label="常用站点"></nav>
+    </section>
+
+    <!-- ===== 模块 4：网易云音乐网页版 =====
+         iframe = 在页面里嵌入另一个网页。
+         有些网站不允许被嵌入，如果下面是空白，点右上角"新窗口打开"即可，并告诉我，我再换方案。 -->
+    <section class="glass card music reveal" style="--i:3">
+      <div class="card-head">
+        <h2 class="title">音乐</h2>
+        <a class="open-link" href="https://music.163.com/st/webplayer" target="_blank" rel="noopener">新窗口打开</a>
+      </div>
+      <div class="player-wrap">
+        <iframe src="https://music.163.com/st/webplayer"
+                title="网易云音乐" loading="lazy"
+                allow="autoplay; encrypted-media"></iframe>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== 搜索栏：固定在屏幕底部（样式见上面 .search）。想换搜索引擎就改 action ===== -->
+  <form class="search glass" action="https://www.google.com/search" method="get">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
+    </svg>
+    <input type="text" name="q" id="q" placeholder="搜索，或按 / 键快速聚焦" autocomplete="off" aria-label="搜索">
+  </form>
+
+<script>
+  /* ============================================================
+     【改这里 ①】常用网站列表
+     每一行一个网站：{ name: "显示的名字", url: "网址" },
+     想用自己的图标：上传图片到仓库，再加 icon: "文件名"，例如：
+       { name: "Claude", url: "https://claude.ai", icon: "claude.png" },
+     不写 icon 时，会自动用名字的第一个字 + 渐变色当图标。
+     想加网站就复制一行；想删就删整行。每行末尾的逗号别漏。
+     ============================================================ */
+  const LINKS = [
+    { name: "哔哩哔哩",               url: "https://www.bilibili.com" },
+    { name: "百度贴吧",               url: "https://tieba.baidu.com" },
+    { name: "Claude",                 url: "https://claude.ai" },
+    { name: "ChatGPT",                url: "https://chatgpt.com" },
+    { name: "Student Learning Space", url: "https://vle.learning.moe.edu.sg" },
+    { name: "Google Classroom",       url: "https://classroom.google.com" },
+  ];
+
+  /* 【改这里 ②】日历每周从周几开始：1 = 周一，0 = 周日 */
+  const WEEK_START = 1;
+
+  /* 每日金句接口。想只要某类句子，可以在网址后加 ?c=d（文学）、?c=i（诗词）、?c=k（哲学） */
+  const HITOKOTO_URL = "https://v1.hitokoto.cn/";
+
+  /* ---------- A. 生成常用站点卡片 ---------- */
+  const linksBox = document.getElementById("links");
+
+  LINKS.forEach((item) => {
+    const a = document.createElement("a");
+    a.className = "tile spot";           // spot = 带鼠标高亮效果的小卡片
+    a.href = item.url;
+    a.title = item.name;
+
+    const icon = document.createElement("div");
+    icon.className = "icon";
+    if (item.icon) {
+      const img = document.createElement("img");
+      img.src = item.icon;
+      img.alt = "";
+      icon.appendChild(img);
+    } else {
+      // 没有图标：取第一个字，并用它算出固定的颜色
+      const ch = item.name.charAt(0).toUpperCase();
+      const hue = (ch.charCodeAt(0) * 47) % 360;
+      icon.textContent = ch;
+      icon.style.background =
+        `linear-gradient(135deg, hsl(${hue} 78% 66%), hsl(${(hue + 40) % 360} 78% 54%))`;
+    }
+
+    const name = document.createElement("span");
+    name.textContent = item.name;
+
+    a.append(icon, name);
+    linksBox.appendChild(a);
+  });
+
+  /* ---------- B. 时钟、日期、问候语 ---------- */
+  const timeEl = document.getElementById("time");
+  const dateEl = document.getElementById("date");
+  const helloEl = document.getElementById("hello");
+  const pad = (n) => String(n).padStart(2, "0");   // 5 -> "05"
+
+  let lastDayKey = "";   // 记录"今天是几号"，跨过午夜时自动刷新日历
+
+  function tick() {
+    const now = new Date();
+    timeEl.textContent = pad(now.getHours()) + ":" + pad(now.getMinutes());
+    dateEl.textContent = now.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" });
+
+    const h = now.getHours();
+    let hello = "晚上好";
+    if (h < 5)       hello = "夜深了，早点休息";
+    else if (h < 12) hello = "早上好";
+    else if (h < 14) hello = "中午好";
+    else if (h < 18) hello = "下午好";
+    helloEl.textContent = hello;
+
+    // 日期变了才重画日历（比如过了午夜）
+    const key = now.getFullYear() + "-" + now.getMonth() + "-" + now.getDate();
+    if (key !== lastDayKey) { lastDayKey = key; renderCalendar(now); }
+  }
+
+  /* ---------- C. 本月日历（今天会被高亮） ---------- */
+  function renderCalendar(now) {
+    const year = now.getFullYear();
+    const month = now.getMonth();          // 0 = 一月
+    const today = now.getDate();
+
+    document.getElementById("calMonth").textContent = (month + 1) + "月";
+    document.getElementById("calYear").textContent = year + " 年";
+
+    const grid = document.getElementById("calGrid");
+    grid.innerHTML = "";
+
+    // 星期标题，按 WEEK_START 排列
+    const names = ["日", "一", "二", "三", "四", "五", "六"];
+    for (let i = 0; i < 7; i++) {
+      const w = document.createElement("div");
+      w.className = "wd";
+      w.textContent = names[(WEEK_START + i) % 7];
+      grid.appendChild(w);
+    }
+
+    // 本月 1 号是星期几 -> 前面要空几格
+    const offset = (new Date(year, month, 1).getDay() - WEEK_START + 7) % 7;
+    for (let i = 0; i < offset; i++) grid.appendChild(document.createElement("div"));
+
+    // 本月一共多少天（下个月的第 0 天 = 本月最后一天）
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const cell = document.createElement("div");
+      cell.className = "d" + (d === today ? " today" : "");   // 今天加上 today 样式
+      cell.textContent = d;
+      grid.appendChild(cell);
+    }
+  }
+
+  tick();
+  setInterval(tick, 1000);   // 每秒刷新一次
+
+  /* ---------- D. 每日金句 ----------
+     同一天只请求一次（存在浏览器的 localStorage 里），点击句子可以手动换一句。
+     如果网络失败，会显示一句备用的话。 */
+  const quoteEl = document.getElementById("quote");
+  const quoteFromEl = document.getElementById("quoteFrom");
+  const QUOTE_KEY = "hitokoto-daily";
+  const FALLBACK = { hitokoto: "今天也要好好加油。", from: "", from_who: "" };
+
+  function showQuote(d) {
+    quoteEl.classList.add("fade");           // 先淡出
+    setTimeout(() => {
+      quoteEl.textContent = d.hitokoto;
+      const who = d.from_who || "";
+      const from = d.from ? "《" + d.from + "》" : "";
+      quoteFromEl.textContent = (who || from) ? "—— " + who + from : "";
+      quoteEl.classList.remove("fade");      // 再淡入
+    }, 250);
+  }
+
+  async function loadQuote(force) {
+    const today = new Date().toDateString();
+    if (!force) {
+      try {
+        const cached = JSON.parse(localStorage.getItem(QUOTE_KEY));
+        if (cached && cached.date === today) { showQuote(cached.data); return; }
+      } catch (e) { /* 读取失败就当没有缓存 */ }
+    }
+    try {
+      const res = await fetch(HITOKOTO_URL);
+      if (!res.ok) throw new Error("bad response");
+      const data = await res.json();
+      showQuote(data);
+      try { localStorage.setItem(QUOTE_KEY, JSON.stringify({ date: today, data })); } catch (e) {}
+    } catch (e) {
+      showQuote(FALLBACK);
+    }
+  }
+  quoteEl.addEventListener("click", () => loadQuote(true));   // 点击 = 强制换一句
+  loadQuote(false);
+
+  /* ---------- E. 鼠标高亮：把鼠标位置告诉 CSS ----------
+     鼠标移动时，找到鼠标所在的所有 .glass / .spot（模块和卡片可以同时亮），
+     把鼠标在它们内部的坐标写进 --mx / --my，CSS 就会把光斑画在那里。 */
+  document.addEventListener("pointermove", (e) => {
+    let node = e.target;
+    while (node && node !== document) {
+      if (node.classList && (node.classList.contains("glass") || node.classList.contains("spot"))) {
+        const r = node.getBoundingClientRect();
+        node.style.setProperty("--mx", (e.clientX - r.left) + "px");
+        node.style.setProperty("--my", (e.clientY - r.top) + "px");
+      }
+      node = node.parentElement;
+    }
+  });
+
+  /* ---------- F. 按 "/" 键直接跳到搜索框 ---------- */
+  const q = document.getElementById("q");
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "/" && document.activeElement !== q) { e.preventDefault(); q.focus(); }
+  });
+
+  /* ---------- G. 触发入场动画 ---------- */
+  requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("ready")));
+  // 动画播完后去掉 .reveal，避免它的过渡设置干扰之后的交互
+  setTimeout(() => {
+    document.querySelectorAll(".reveal").forEach((el) => el.classList.remove("reveal"));
+  }, 2600);
+</script>
+</body>
+</html>

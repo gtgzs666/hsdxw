@@ -158,9 +158,13 @@
     padding: 48px 24px 170px;
     display: grid;
     gap: 22px;
-    grid-template-columns: 5fr 7fr;   /* 第一行：左边个人信息(5份)，右边时间日历(7份) */
+    grid-template-columns: repeat(12, 1fr);   /* 12 列：每个模块占几列，就是它的宽度（5+7 / 8+4 / 12） */
   }
-  .site-panel { grid-column: 1 / -1; }   /* 网站模块占满整行 */
+  .profile  { grid-column: span 5; }   /* 第一行：个人信息占 5 列 */
+  .clockcal { grid-column: span 7; }   /*          时间日历占 7 列 */
+  .weather  { grid-column: span 8; }   /* 第二行：天气占 8 列 = 左边 2/3 */
+  .folder   { grid-column: span 4; }   /*          网站文件夹占 4 列 = 右边 1/3 */
+  .site-panel { grid-column: 1 / -1; } /* 其他整行模块（比如文件传输助手）占满 12 列 */
 
   /* ---------- 6. 模块①：个人信息 ---------- */
   .profile {
@@ -553,9 +557,10 @@
   .cbtn[aria-pressed="true"] { background: #fff; color: #0c0c10; }   /* C 按钮：清爽模式开着时变成白色实心 */
   .cbtn[aria-pressed="true"]:hover { background: #fff; }
 
-  /* 番茄时钟按钮：只在清爽模式下才出现。
+  /* 番茄时钟、计算器按钮：只在清爽模式下才出现。
      不是直接 display:none，而是把高度收成 0，这样进入清爽模式时侧边栏会平滑地"长出"一个按钮 */
-  body:not(.clean) #pomo-btn {
+  body:not(.clean) #pomo-btn,
+  body:not(.clean) #calc-btn {
     height: 0;
     margin-top: -8px;               /* 抵消掉它和上一个按钮之间的 8px 间距 */
     opacity: 0;
@@ -566,33 +571,46 @@
                 border-width 0.4s, visibility 0s 0.4s;
   }
 
-  /* ---------- 9.6 番茄时钟窗口 ----------
-     用 left / top 定位（拖动时 JS 会改它们）；一开始靠 right / bottom 停在右下角 */
-  .pomo {
+  /* ---------- 9.6 悬浮窗口（番茄时钟、计算器共用的"窗口外壳"） ----------
+     class="win" 就是一个悬浮窗口：平时藏着，加上 .open 才出现。
+     出现 / 消失的动画是"从侧边栏的按钮里长出来 / 收回按钮里去"：
+       - 缩放的中心点（transform-origin）由 JS 在关闭那一刻算好，指向对应的侧边栏按钮；
+       - 缩放用一条柔和的"先快后慢"曲线，透明度单独、略短地淡出，两者叠在一起就很顺；
+       - will-change 提前告诉浏览器"这个要动"，让它单独做一层，动画不掉帧。
+     定位靠 right / bottom；拖动时 JS 用 transform 偏移，不会改这些值。 */
+  .win {
     position: fixed;
-    right: 92px;                /* 留出右边侧边栏的位置 */
-    bottom: 28px;
     z-index: 120;
-    width: 264px;
-    padding: 20px 22px 22px;
     border-radius: 24px;
     cursor: grab;
     user-select: none;
-    touch-action: none;         /* 触屏拖动时不触发页面滚动 */
+    touch-action: none;           /* 触屏拖动时不触发页面滚动 */
+    transform-origin: 100% 0%;    /* 默认朝右上角（侧边栏的方向），第一次关闭后由 JS 精确计算 */
     opacity: 0;
     visibility: hidden;
-    scale: 0.96;
-    translate: 0 10px;
-    transition: opacity 0.4s var(--ease), scale 0.4s var(--ease), translate 0.4s var(--ease), visibility 0s 0.4s;
+    scale: 0.55;
+    translate: 0 6px;
+    will-change: opacity, scale;
+    /* 关闭：缩小 0.5 秒，透明度 0.32 秒淡出；visibility 等动画播完才真正隐藏 */
+    transition: scale 0.5s cubic-bezier(0.32, 0.72, 0, 1),
+                translate 0.5s cubic-bezier(0.32, 0.72, 0, 1),
+                opacity 0.32s ease-out,
+                visibility 0s 0.5s;
   }
-  .pomo.open {
+  .win.open {
     opacity: 1;
     visibility: visible;
     scale: 1;
     translate: 0 0;
-    transition: opacity 0.4s var(--ease), scale 0.4s var(--ease), translate 0.4s var(--ease), visibility 0s 0s;
+    transition: scale 0.5s cubic-bezier(0.32, 0.72, 0, 1),
+                translate 0.5s cubic-bezier(0.32, 0.72, 0, 1),
+                opacity 0.28s ease-out,
+                visibility 0s 0s;
   }
-  .pomo.dragging { cursor: grabbing; box-shadow: 0 28px 64px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+  .win.dragging { cursor: grabbing; box-shadow: 0 28px 64px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+
+  /* 番茄时钟窗口的位置和大小（停在侧边栏的左边） */
+  .pomo { right: 92px; bottom: 28px; width: 264px; padding: 20px 22px 22px; }
 
   .pomo-head { font-size: 14px; font-weight: 900; color: var(--text-soft); margin-bottom: 14px; }
   .pomo-close {
@@ -689,19 +707,17 @@
     transition: opacity 0.45s var(--ease), translate 0.45s var(--ease), visibility 0s 0s;
   }
 
-  /* ---------- 9.7 窗口拖动 / 惯性滑行时的"减负" ----------
-     拖动时，窗口背后的磨砂模糊（backdrop-filter）是最吃性能的部分，每一帧都要重新算。
-     所以拖动和滑行期间，临时关掉模糊、换成更深一点的纯色底；松手停稳后再恢复。
-     窗口本身用 transform 移动（由显卡直接处理，不触发重新排版），所以会顺滑很多。 */
+  /* ---------- 9.7 窗口拖动 / 惯性滑行 ----------
+     窗口用 transform 移动（显卡直接处理，不触发重新排版），拖动和滑行时保留完整的磨砂效果。
+     如果在你的 Chromebook 上拖动时仍然觉得卡，可以把 --drag-blur 调小一点（比如 12px）：
+     拖动时的模糊会弱一些，但会更流畅；松手停稳后恢复正常。 */
+  :root { --drag-blur: var(--glass-blur); }   /* 拖动时的磨砂程度，默认和平时一样 */
   .glass.dragging,
   .glass.gliding {
-    -webkit-backdrop-filter: none;
-            backdrop-filter: none;
-    background: rgba(14, 14, 18, 0.86);
-    will-change: transform;
+    -webkit-backdrop-filter: blur(var(--drag-blur)) saturate(150%);
+            backdrop-filter: blur(var(--drag-blur)) saturate(150%);
+    will-change: transform, opacity, scale;
   }
-  .ftwin.dragging iframe,
-  .ftwin.gliding iframe { pointer-events: none; }   /* 拖动时别让网页抢走鼠标事件 */
 
   /* ---------- 9.8 番茄钟里的"停止计时"和"重新输入" ---------- */
   .pomo-time { transition: opacity 0.3s; }
@@ -755,76 +771,212 @@
   .pill:active { transform: scale(0.97); }
   .pill:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
-  /* 窗口：一开始藏着，加上 .open 才淡入（和番茄钟窗口同一套动画） */
-  .ftwin {
-    position: fixed;
-    right: 92px;
-    top: 7vh;
-    z-index: 105;
-    width: min(400px, 92vw);
-    height: min(680px, 84vh);
-    padding: 14px;
-    border-radius: 24px;
+  /* ---------- 9.10 计算器（清爽模式侧边栏里的第三个按钮） ---------- */
+  .calc { right: 372px; bottom: 28px; width: 276px; padding: 20px; }   /* 停在番茄钟窗口的左边，两个都开也不重叠 */
+  .calc-screen {
+    margin-bottom: 14px;
+    padding: 10px 14px 12px;
+    min-height: 82px;
+    text-align: right;
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 16px;
+  }
+  .calc-expr {
+    min-height: 18px;
+    font-size: 13px;
+    color: var(--text-soft);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .calc-out {
+    margin-top: 4px;
+    font-size: 38px;
+    font-weight: 900;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: font-size 0.2s;
+  }
+  .calc-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }   /* 4 列 6 行的按键网格 */
+  .ck {
+    height: 46px;
+    font: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, transform 0.25s var(--ease);
+  }
+  .ck:hover { background: rgba(255, 255, 255, 0.15); transform: translateY(-1px); }
+  .ck:active { transform: scale(0.95); }
+  .ck:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .ck.fn { background: rgba(255, 255, 255, 0.12); font-size: 15px; }        /* AC ← √ x² */
+  .ck.op { background: rgba(255, 255, 255, 0.16); font-size: 20px; }        /* + − × ÷ */
+  .ck.op.active { background: #fff; color: #0c0c10; }                        /* 正在等你输入下一个数的运算符，会亮起来 */
+  .ck.eq { grid-column: 1 / -1; background: #fff; color: #0c0c10; font-weight: 900; font-size: 20px; }   /* 等号：占满最下面一整行 */
+  .ck.eq:hover { background: #e9e9ef; }
+
+  /* ---------- 9.11 天气模块（左 2/3） ---------- */
+  .weather {
+    padding: 26px 28px 28px;
     display: flex;
     flex-direction: column;
-    opacity: 0;
-    visibility: hidden;
-    scale: 0.96;
-    translate: 0 10px;
-    transition: opacity 0.4s var(--ease), scale 0.4s var(--ease), translate 0.4s var(--ease), visibility 0s 0.4s;
+    gap: 18px;
   }
-  .ftwin.open {
-    opacity: 1;
-    visibility: visible;
-    scale: 1;
-    translate: 0 0;
-    transition: opacity 0.4s var(--ease), scale 0.4s var(--ease), translate 0.4s var(--ease), visibility 0s 0s;
+  .wx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .wx-city { font-size: 18px; font-weight: 900; }
+  .wx-sub { margin-top: 4px; font-size: 13px; color: var(--text-soft); }
+  .wx-now { display: flex; align-items: center; gap: 10px; }
+  .wx-now svg { width: 40px; height: 40px; }
+  .wx-now-temp { font-size: 34px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+  .wx-now-text { font-size: 13px; color: var(--text-soft); }
+
+  /* 7 天排成 7 列；窗口很窄时整排可以左右滑动，不会挤变形 */
+  .wx-days {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(7, minmax(78px, 1fr));
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
-  /* 进入清爽模式：这个窗口也跟着淡出（它依然"开着"，退出清爽模式后会回来） */
-  body.clean .ftwin.open {
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: opacity 0.6s var(--ease), visibility 0s 0.6s;
+  .wx-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 14px 6px 12px;
+    text-align: center;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: background 0.3s, transform 0.45s var(--ease);
+    /* 数据到了之后，7 张卡片依次浮现（--i 是第几张，在 JS 里设置） */
+    animation: wxIn 0.6s var(--ease) both;
+    animation-delay: calc(var(--i) * 70ms);
   }
-  .ftwin-head {
+  .wx-day:hover { transform: translateY(-4px); background: rgba(255, 255, 255, 0.08); }
+  .wx-day.today { background: rgba(255, 255, 255, 0.10); border-color: rgba(255, 255, 255, 0.18); }
+  .wx-label { font-size: 14px; font-weight: 900; }
+  .wx-date { font-size: 11.5px; color: var(--text-soft); }
+  .wx-icon { width: 44px; height: 44px; margin: 6px 0 2px; }
+  .wx-icon svg { width: 100%; height: 100%; display: block; }
+  .wx-text { font-size: 13px; font-weight: 700; }
+  .wx-temp { margin-top: 2px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .wx-temp b { font-size: 16px; font-weight: 900; }            /* 最高温：大、粗 */
+  .wx-temp span { margin-left: 6px; color: var(--text-soft); } /* 最低温：小、淡 */
+  .wx-rain { font-size: 11.5px; color: #9fd0ff; }
+  @keyframes wxIn { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
+
+  /* 加载中：占位的灰块轻轻"呼吸" */
+  .wx-day.skeleton { min-height: 196px; animation: wxPulse 1.4s ease-in-out infinite; animation-delay: 0s; }
+  @keyframes wxPulse { 50% { opacity: 0.45; } }
+  /* 获取失败：整排换成一句提示 + 重试按钮 */
+  .wx-fail {
+    grid-column: 1 / -1;
+    min-height: 160px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 2px 4px 12px;
-    cursor: grab;                 /* 按住标题栏可以拖动整个窗口 */
-    user-select: none;
-    touch-action: none;
+    justify-content: center;
+    gap: 14px;
+    font-size: 14px;
+    color: var(--text-soft);
   }
-  .ftwin.dragging .ftwin-head { cursor: grabbing; }
-  .ftwin-title { font-size: 14px; font-weight: 900; color: var(--text-soft); }
-  .ftwin-tools { display: flex; gap: 4px; }
-  .ftwin-btn {
-    width: 28px;
-    height: 28px;
-    padding: 0;
+
+  /* ---------- 9.12 网站文件夹（右 1/3） ----------
+     只显示前 4 个图标；点图标会直接打开网站，点图标以外的任何地方会展开全部（见下面的展开层）。 */
+  .folder {
+    padding: 26px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    cursor: pointer;                      /* 提示"这里可以点" */
+    transition: transform 0.45s var(--ease);
+  }
+  .folder:hover { transform: translateY(-4px); }
+  .folder:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+  .fold-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .fold-head .panel-title { margin-bottom: 0; }
+  .fold-more { font-size: 12.5px; color: var(--text-soft); transition: color 0.25s; white-space: nowrap; }
+  .folder:hover .fold-more { color: #fff; }
+  .fold-preview {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);   /* 2 × 2 排列 */
+    gap: 12px;
+    align-content: center;
+  }
+  .fold-preview .tile { padding: 14px 6px 10px; gap: 8px; }
+  .fold-preview .icon { width: 48px; height: 48px; border-radius: 14px; font-size: 20px; }
+
+  /* ---------- 9.13 展开层：整个屏幕模糊 + 所有图标一起展开 ----------
+     平时是透明、藏起来的；<body> 加上 fold-open 就显示。
+     "屏幕变模糊"靠的是这一层自己的 backdrop-filter：它盖在整个页面上，把它后面的一切都模糊掉，
+     模糊的程度从 0 渐变到 26px，所以是慢慢糊上去的。 */
+  .fold-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;                           /* 比搜索栏、侧边栏、悬浮窗口都高，一起被模糊 */
     display: grid;
     place-items: center;
-    color: var(--text-soft);
-    background: transparent;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    transition: background 0.25s, color 0.25s;
+    padding: 24px;
+    background: rgba(4, 5, 12, 0);
+    -webkit-backdrop-filter: blur(0px);
+            backdrop-filter: blur(0px);
+    visibility: hidden;
+    transition: background 0.5s var(--ease), backdrop-filter 0.5s var(--ease),
+                -webkit-backdrop-filter 0.5s var(--ease), visibility 0s 0.5s;
   }
-  .ftwin-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
-  .ftwin-btn:focus-visible { outline: 2px solid #fff; }
-  .ftwin-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2;
-                   stroke-linecap: round; stroke-linejoin: round; }
-  .ftwin iframe {
-    flex: 1;
-    min-height: 0;
-    width: 100%;
-    border: 0;
-    border-radius: 14px;
-    background: #fff;             /* 微信的网页是浅色的，给它一个白底 */
+  body.fold-open { overflow: hidden; }      /* 展开时锁住页面滚动 */
+  body.fold-open .fold-overlay {
+    background: rgba(4, 5, 12, 0.42);
+    -webkit-backdrop-filter: blur(26px) saturate(120%);
+            backdrop-filter: blur(26px) saturate(120%);
+    visibility: visible;
+    transition: background 0.5s var(--ease), backdrop-filter 0.5s var(--ease),
+                -webkit-backdrop-filter 0.5s var(--ease), visibility 0s 0s;
   }
-  .ftwin-hint { margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--text-soft); }
+
+  /* 展开后的面板：从文件夹的位置"长"出来（缩放中心由 JS 对准文件夹） */
+  .fold-panel {
+    position: relative;
+    width: min(680px, 92vw);
+    max-height: 86vh;
+    overflow-y: auto;
+    padding: 30px 30px 34px;
+    border-radius: 30px;
+    background: rgba(12, 12, 16, 0.62);
+    outline: none;
+    opacity: 0;
+    scale: 0.4;
+    transition: scale 0.55s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease-out;
+  }
+  body.fold-open .fold-panel { opacity: 1; scale: 1; transition: scale 0.55s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.35s ease-out; }
+  .fold-panel .panel-title { font-size: 20px; margin-bottom: 22px; }
+  .fold-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 14px;
+  }
+  /* 展开时每个图标依次"弹"出来：延迟 = 第几个 × 45ms（--i 在 JS 里设置） */
+  .fold-grid .tile {
+    opacity: 0;
+    scale: 0.6;
+    transition: transform 0.45s var(--ease), background 0.3s, opacity 0.25s, scale 0.25s;
+  }
+  body.fold-open .fold-grid .tile {
+    opacity: 1;
+    scale: 1;
+    transition: transform 0.45s var(--ease), background 0.3s,
+                opacity 0.4s var(--ease) calc(var(--i) * 45ms + 140ms),
+                scale 0.5s cubic-bezier(0.32, 0.72, 0, 1) calc(var(--i) * 45ms + 140ms);
+  }
 
   /* ---------- 10. 入场动画（只做一次） ----------
      模块按顺序从下方浮现。--i 是顺序号（在 HTML 里写），越小越先出现。 */
@@ -839,6 +991,7 @@
   /* ---------- 11. 手机 / 窄屏：全部改成单列，上下排 ---------- */
   @media (max-width: 860px) {
     .page { grid-template-columns: 1fr; padding: 28px 16px 170px; }
+    .page > * { grid-column: 1 / -1; }   /* 窄屏时每个模块都占满一整行 */
     .clockcal { grid-template-columns: 1fr; }
     .calendar { padding-left: 0; border-left: none; padding-top: 22px; border-top: 1px solid var(--glass-border); }
   }
@@ -914,23 +1067,41 @@
       </div>
     </section>
 
-    <!-- ===== 模块③：常用网站（下面一整行） ===== -->
-    <section class="site-panel glass spot reveal" style="--i:2">
-      <h2 class="panel-title">常用网站</h2>
-      <nav class="sites" id="sites" aria-label="常用网站"></nav>
+    <!-- ===== 模块③：天气（第二行左边，占 2/3） =====
+         数据来自 Open-Meteo（免费、不需要 key），经纬度在 script 的 M 部分设置。
+         卡片由 script 根据返回的数据自动生成。 -->
+    <section class="weather glass spot reveal" id="weather" style="--i:2">
+      <div class="wx-head">
+        <div>
+          <h2 class="wx-city">新加坡</h2>
+          <p class="wx-sub" id="wx-sub">正在获取天气…</p>
+        </div>
+        <div class="wx-now" id="wx-now"></div>
+      </div>
+      <div class="wx-days" id="wx-days"></div>
+    </section>
+
+    <!-- ===== 模块④：常用网站文件夹（第二行右边，占 1/3） =====
+         只显示前 4 个图标；点图标以外的地方会展开全部（展开层在页面最下面）。
+         图标本身是链接，点了直接打开网站。 -->
+    <section class="folder glass spot reveal" id="folder" style="--i:3"
+             role="button" tabindex="0" aria-expanded="false" aria-label="常用网站，点击展开全部">
+      <div class="fold-head">
+        <h2 class="panel-title">常用网站</h2>
+        <span class="fold-more">展开全部 · <span id="fold-count">0</span></span>
+      </div>
+      <nav class="fold-preview" id="fold-preview" aria-label="常用网站（前四个）"></nav>
     </section>
 
     <!-- ===== 模块⑤：文件传输助手入口 =====
-         点"在此处打开"，会在页面上弹出一个可拖动的窗口；
-         点"新窗口打开"，会用浏览器自带的小窗口打开（最稳）。 -->
+         微信的网页不允许被嵌进别的网页，所以"打开"会用浏览器的新窗口打开它。 -->
     <section class="site-panel ft-panel glass spot reveal" style="--i:3">
       <div>
         <h2 class="panel-title">文件传输助手</h2>
-        <p class="ft-desc">用微信扫码登录后，手机和电脑之间可以互相传文字和文件。</p>
+        <p class="ft-desc">用微信扫码登录后，手机和电脑之间可以互相传文字和文件。会在新窗口里打开。</p>
       </div>
       <div class="ft-actions">
-        <button type="button" class="pill" id="ft-open">在此处打开</button>
-        <button type="button" class="pill ghost" id="ft-popup">新窗口打开</button>
+        <button type="button" class="pill" id="ft-open">打开</button>
       </div>
     </section>
 
@@ -968,7 +1139,7 @@
 
   <!-- ===== 右侧侧边栏（平时透明，鼠标靠近才滑出来） =====
        所有功能按钮都放在这里，从上到下排。最上面是 C（切换清爽模式，也可以直接按键盘 C），
-       下面是番茄时钟（只在清爽模式下出现）。
+       下面是番茄时钟和计算器（只在清爽模式下出现）。
        【以后加新功能】在这里再写一个 <button type="button" class="cbtn spot" ...> 就行，
        侧边栏会自己变长。 -->
   <aside class="corner glass spot" id="corner" aria-label="功能侧边栏">
@@ -979,13 +1150,20 @@
         <circle cx="12" cy="13.5" r="7.5"></circle><path d="M12 9.5v4l2.5 2"></path><path d="M9.5 2.5h5"></path>
       </svg>
     </button>
+    <button type="button" class="cbtn spot" id="calc-btn" title="计算器" aria-label="打开或关闭计算器">
+      <!-- 一个小计算器图标：外框 + 屏幕线 + 六个"点"（短到几乎为零的线段，加上圆头就是圆点） -->
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5" y="3" width="14" height="18" rx="2.5"></rect>
+        <path d="M8.5 7.5h7M9 12h.01M12 12h.01M15 12h.01M9 16h.01M12 16h.01M15 16h.01"></path>
+      </svg>
+    </button>
   </aside>
 
   <!-- ===== 番茄时钟窗口（可拖动） =====
        data-phase 表示现在的阶段，由 script 来改：
          idle = 等你输入分钟数    work = 专注倒计时    break = 休息倒计时
        CSS 会根据它自动切换显示哪一块。 -->
-  <div class="pomo glass spot" id="pomo" data-phase="idle" role="dialog" aria-label="番茄时钟">
+  <div class="win pomo glass spot" id="pomo" data-phase="idle" role="dialog" aria-label="番茄时钟">
     <div class="pomo-head">番茄时钟</div>
     <!-- 右上角的 X：关闭窗口（计时不会停） -->
     <button type="button" class="pomo-close" id="pomo-close" aria-label="关闭番茄时钟">
@@ -1014,31 +1192,69 @@
     </div>
   </div>
 
-  <!-- ===== 文件传输助手窗口（可拖动） =====
-       里面是一个 iframe（"网页中的网页"）。为了不浪费流量，第一次点"打开"时才开始加载。
-       拖动：按住顶部标题栏。 -->
-  <div class="ftwin glass spot" id="ftwin" role="dialog" aria-label="文件传输助手">
-    <div class="ftwin-head" id="ftwin-head">
-      <span class="ftwin-title">文件传输助手</span>
-      <span class="ftwin-tools">
-        <!-- ↗：在浏览器的新窗口里打开 -->
-        <button type="button" class="ftwin-btn" id="ftwin-popup" title="在新窗口打开" aria-label="在新窗口打开">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3v10h10v-3M9 3h4v4M13 3L7 9"></path></svg>
-        </button>
-        <!-- X：关闭窗口 -->
-        <button type="button" class="ftwin-btn" id="ftwin-close" title="关闭" aria-label="关闭">
-          <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12"></path></svg>
-        </button>
-      </span>
+  <!-- ===== 计算器窗口（可拖动，只在清爽模式下通过侧边栏打开） =====
+       每个按键上的 data-k 是它的"身份"，script 靠它判断按了什么：
+         数字 0-9、小数点 "."、运算符 + - * /、等于 "="、
+         sqrt（开根号）、sq（平方）、neg（正负号）、back（退格）、ac（全部清零） -->
+  <div class="win calc glass spot" id="calc" role="dialog" aria-label="计算器">
+    <div class="pomo-head">计算器</div>
+    <button type="button" class="pomo-close" id="calc-close" aria-label="关闭计算器">
+      <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12"></path></svg>
+    </button>
+
+    <!-- 屏幕：上面一行是算式（小字），下面是当前数字（大字） -->
+    <div class="calc-screen">
+      <div class="calc-expr" id="calc-expr"></div>
+      <div class="calc-out" id="calc-out">0</div>
     </div>
-    <iframe id="ft-frame" title="文件传输助手"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
-            referrerpolicy="no-referrer"></iframe>
-    <p class="ftwin-hint">如果上面是空白或提示"拒绝连接"，说明微信不允许被嵌进别的网页，请点右上角的 ↗ 在新窗口打开。</p>
+
+    <!-- 按键：4 列 × 6 行（最下面一行是占满整行的等号）
+         ± = 正负号：把屏幕上的数变成相反数；刚按完运算符时按它，可以直接输入一个负数 -->
+    <div class="calc-keys" id="calc-keys">
+      <button type="button" class="ck fn" data-k="ac">AC</button>
+      <button type="button" class="ck fn" data-k="back" aria-label="退格">←</button>
+      <button type="button" class="ck fn" data-k="sqrt" aria-label="开根号">√</button>
+      <button type="button" class="ck fn" data-k="sq" aria-label="平方">x²</button>
+
+      <button type="button" class="ck" data-k="7">7</button>
+      <button type="button" class="ck" data-k="8">8</button>
+      <button type="button" class="ck" data-k="9">9</button>
+      <button type="button" class="ck op" data-k="/" aria-label="除">÷</button>
+
+      <button type="button" class="ck" data-k="4">4</button>
+      <button type="button" class="ck" data-k="5">5</button>
+      <button type="button" class="ck" data-k="6">6</button>
+      <button type="button" class="ck op" data-k="*" aria-label="乘">×</button>
+
+      <button type="button" class="ck" data-k="1">1</button>
+      <button type="button" class="ck" data-k="2">2</button>
+      <button type="button" class="ck" data-k="3">3</button>
+      <button type="button" class="ck op" data-k="-" aria-label="减">−</button>
+
+      <button type="button" class="ck fn" data-k="neg" aria-label="正负号">±</button>
+      <button type="button" class="ck" data-k="0">0</button>
+      <button type="button" class="ck" data-k=".">.</button>
+      <button type="button" class="ck op" data-k="+" aria-label="加">+</button>
+
+      <button type="button" class="ck eq" data-k="=" aria-label="等于">=</button>
+    </div>
   </div>
 
   <!-- 屏幕正上方的提示条：专注时间到了会在这里提示（点一下可以关掉） -->
   <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- ===== 文件夹展开层 =====
+       点文件夹的空白处时，整个屏幕被模糊，面板从文件夹的位置展开，所有网站图标一起弹出来。
+       关闭：点面板外面、点右上角 X、或按 Esc。 -->
+  <div class="fold-overlay" id="fold-overlay" aria-hidden="true">
+    <section class="fold-panel glass" id="fold-panel" tabindex="-1" role="dialog" aria-label="常用网站">
+      <button type="button" class="pomo-close" id="fold-close" aria-label="关闭">
+        <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12"></path></svg>
+      </button>
+      <h2 class="panel-title">常用网站</h2>
+      <nav class="fold-grid" id="fold-grid" aria-label="全部常用网站"></nav>
+    </section>
+  </div>
 
 <script>
   /* ============================================================
@@ -1048,6 +1264,7 @@
      图标是你要上传到 GitHub 的图片，和 index.html 放在同一层。
      图标还没传也没关系，会先显示名字的第一个字（带渐变色）。
      想加网站：复制一行改一改；想删：删掉整行；每行末尾的逗号别漏。
+     【顺序很重要】最前面的 4 个会显示在页面上的文件夹里，其余的点开文件夹后才看得到。
      ============================================================ */
   const SITES = [
     { name: "哔哩哔哩",     url: "https://www.bilibili.com",                icon: "bilibili.png" },
@@ -1068,9 +1285,9 @@
     box.style.background = `linear-gradient(135deg, hsl(${hue} 75% 62%), hsl(${(hue + 40) % 360} 75% 50%))`;
   }
 
-  /* ---------- B. 生成网站图标卡片 ---------- */
-  const sitesBox = document.getElementById("sites");
-  SITES.forEach((s) => {
+  /* ---------- B. 网站图标 + 文件夹 ----------
+     makeTile(网站)：造出一个图标卡片（<a> 链接）。文件夹里的预览和展开后的面板都用它来造。 */
+  function makeTile(s) {
     const a = document.createElement("a");
     a.className = "tile spot";      // spot：让每个小卡片也有鼠标聚光
     a.href = s.url;
@@ -1092,8 +1309,66 @@
     name.textContent = s.name;
 
     a.append(icon, name);
-    sitesBox.appendChild(a);
+    return a;
+  }
+
+  const folderEl    = document.getElementById("folder");
+  const foldPreview = document.getElementById("fold-preview");
+  const foldOverlay = document.getElementById("fold-overlay");
+  const foldPanel   = document.getElementById("fold-panel");
+  const foldGrid    = document.getElementById("fold-grid");
+
+  // 文件夹里只放前 4 个
+  SITES.slice(0, 4).forEach((s) => foldPreview.appendChild(makeTile(s)));
+  // 展开面板里放全部，并给每个图标编号 --i（CSS 用它算"依次弹出"的延迟）
+  SITES.forEach((s, i) => {
+    const t = makeTile(s);
+    t.style.setProperty("--i", i);
+    foldGrid.appendChild(t);
   });
+  document.getElementById("fold-count").textContent = SITES.length + " 个";
+
+  /* 展开 / 收起
+     原理：给 <body> 加上或去掉 fold-open，CSS 负责所有动画（模糊、面板缩放、图标依次弹出）。
+     JS 只额外做一件事：把面板"缩放的中心点"对准文件夹，这样面板像是从文件夹里长出来的。 */
+  function aimPanelAtFolder() {
+    const f = folderEl.getBoundingClientRect();
+    // offsetLeft / offsetTop 是面板"没被缩放时"的位置，不受动画影响，算出来才准
+    const x = f.left + f.width / 2 - foldPanel.offsetLeft;
+    const y = f.top + f.height / 2 - foldPanel.offsetTop;
+    foldPanel.style.transformOrigin = x + "px " + y + "px";
+  }
+  function openFold() {
+    if (document.body.classList.contains("fold-open")) return;
+    aimPanelAtFolder();
+    document.body.classList.add("fold-open");
+    foldOverlay.setAttribute("aria-hidden", "false");
+    folderEl.setAttribute("aria-expanded", "true");
+    requestAnimationFrame(() => foldPanel.focus({ preventScroll: true }));
+  }
+  function closeFold() {
+    if (!document.body.classList.contains("fold-open")) return;
+    aimPanelAtFolder();                      // 收起时也朝文件夹缩回去（页面被锁住没滚动，位置不变）
+    document.body.classList.remove("fold-open");
+    foldOverlay.setAttribute("aria-hidden", "true");
+    folderEl.setAttribute("aria-expanded", "false");
+    folderEl.focus({ preventScroll: true });
+  }
+
+  // 点文件夹：点到的是图标（<a>）就让它正常打开网站；点到其他任何地方才展开
+  folderEl.addEventListener("click", (e) => {
+    if (e.target.closest("a")) return;
+    openFold();
+  });
+  // 键盘：焦点在文件夹本身时，按 Enter 或空格展开
+  folderEl.addEventListener("keydown", (e) => {
+    if (e.target !== folderEl) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFold(); }
+  });
+  // 收起：点面板外面的模糊区域 / 点 X / 按 Esc
+  foldOverlay.addEventListener("click", (e) => { if (e.target === foldOverlay) closeFold(); });
+  document.getElementById("fold-close").addEventListener("click", closeFold);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeFold(); });
 
   /* ---------- C. 每日金句（hitokoto 接口） ----------
      逻辑：同一天内先用缓存（所以是"每日"金句）；点击句子可以手动换一句。
@@ -1308,7 +1583,7 @@
   document.addEventListener("keydown", (e) => {
     // 只有当你"不在任何输入框里"时，按 / 才跳到搜索框（不然在日程里打"/"会被抢走）
     // （清爽模式下搜索栏是隐藏的，所以这时按 / 不处理）
-    if (e.key === "/" && document.activeElement.tagName !== "INPUT" && !document.body.classList.contains("clean")) {
+    if (e.key === "/" && document.activeElement.tagName !== "INPUT" && !document.body.classList.contains("clean") && !document.body.classList.contains("fold-open")) {
       e.preventDefault(); q.focus();
     }
     if (e.key === "Escape") q.blur();
@@ -1333,7 +1608,7 @@
     cleanBtn.setAttribute("aria-pressed", String(on));
 
     // 退出清爽模式 = 番茄钟停止（你要求的规则）
-    if (!on) stopPomo();
+    if (!on) { stopPomo(); closeCalc(); }
   }
   const toggleClean = () => setClean(!isClean());
 
@@ -1342,6 +1617,7 @@
   // 键盘 C 切换。注意：你正在输入框里打字时不能触发，否则写"cat"会把模式切来切去
   document.addEventListener("keydown", (e) => {
     if (e.key !== "c" && e.key !== "C") return;
+    if (document.body.classList.contains("fold-open")) return;   // 文件夹展开时不切换清爽模式
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;   // Ctrl+C 复制等组合键不处理
     const tag = document.activeElement.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -1446,6 +1722,8 @@
     if (pomoEl.dataset.phase === "idle") requestAnimationFrame(() => pomoInput.focus());
   }
   function closePomo() {
+    // 关闭前先算好"缩放中心"= 侧边栏里番茄钟按钮的位置，窗口就会朝着它收进去
+    if (pomoEl.classList.contains("open")) aimAt(pomoEl, pomoBtn);
     pomoEl.classList.remove("open");
     if (document.activeElement === pomoInput) pomoInput.blur();
   }
@@ -1577,13 +1855,22 @@
      现在的做法：
        ① 用 transform 移动（显卡直接处理，不需要重新排版）；
        ② 每一帧最多更新一次（requestAnimationFrame）；
-       ③ 拖动和滑行期间临时关掉模糊（见 CSS 9.7），停稳后自动恢复。
+       ③ 拖动和滑行时保持完整的磨砂效果（样式见 CSS 9.7；若觉得卡，可调小 --drag-blur）。
 
      惯性怎么算：
        松手那一刻，用"最近 0.1 秒内鼠标走了多远 ÷ 用了多久"得到速度，
        之后每一帧让速度按指数规律衰减，位置 += 速度 × 时间，所以越滑越慢、自然停下。
        撞到屏幕边缘就贴边停住。
      ============================================================ */
+  // 把窗口"缩放的中心点"设到某个按钮的位置：
+  // 关闭时窗口会朝这个点缩小、收进按钮里；再次打开时就从那里"长"出来。
+  // 只在窗口处于打开状态时调用（这时窗口大小是原始大小，算出来才准）。
+  function aimAt(el, btn) {
+    const w = el.getBoundingClientRect();
+    const b = btn.getBoundingClientRect();
+    el.style.transformOrigin = (b.left + b.width / 2 - w.left) + "px " + (b.top + b.height / 2 - w.top) + "px";
+  }
+
   function makeDraggable(el, handle, ignoreSel) {
     let tx = 0, ty = 0;              // 窗口相对"原来位置"挪动了多少像素
     let dragRaf = 0, glideRaf = 0;   // requestAnimationFrame 的编号，用来随时取消
@@ -1609,8 +1896,8 @@
       if (sp > MAX_SPEED) { vx *= MAX_SPEED / sp; vy *= MAX_SPEED / sp; }
 
       // 【改这里】滑行手感：TAU 越大滑得越远、越久。总滑行距离 ≈ 松手速度 × TAU
-      // 比如正常拖动速度约 1 像素/毫秒，TAU=280 → 大约再滑 280 像素
-      const TAU = 280;
+      // 比如正常拖动速度约 1 像素/毫秒，TAU=140 → 大约再滑 140 像素（之前是 280，现在减半）
+      const TAU = 140;
 
       let last = performance.now();
       el.classList.add("gliding");
@@ -1698,36 +1985,415 @@
 
   /* ============================================================
      K. 文件传输助手
-     两种打开方式：
-       ① 在页面里弹出窗口（iframe，第一次打开时才加载网页）
-       ② 用浏览器自带的小窗口打开（最稳）
-     提醒：微信的网页版可能不允许被嵌进别的网页（网站自己决定的），
-     这时窗口里会是空白或"拒绝连接"，用 ② 就行。
+     微信的网页不允许被嵌进别的网页，所以"打开"直接用浏览器的新窗口打开它。
      ============================================================ */
   const FT_URL = "https://filehelper.weixin.qq.com/";
-  const ftWin   = document.getElementById("ftwin");
-  const ftFrame = document.getElementById("ft-frame");
-
-  function openFt() {
-    // 第一次打开才给 iframe 设置网址（懒加载）
-    if (!ftFrame.getAttribute("src")) ftFrame.setAttribute("src", FT_URL);
-    ftWin.classList.add("open");
-  }
-  function closeFt() { ftWin.classList.remove("open"); }
-  function popupFt() {
+  document.getElementById("ft-open").addEventListener("click", () => {
     window.open(FT_URL, "filehelper", "popup,width=460,height=780,noopener,noreferrer");
+  });
+
+  /* ============================================================
+     L. 计算器（清爽模式侧边栏里的第三个按钮）
+     支持：加、减、乘、除、开根号、平方，外加 AC（清零）、←（退格）、=（等于）。
+     工作方式和普通手持计算器一样："边输入边算"：
+       输入 12 → 按 × → 输入 3 → 按 + 的那一刻，会先算出 36，再等你输入下一个数。
+     用到的几个状态（都放在 calc 这个对象里）：
+       cur      屏幕上显示的数字（字符串）
+       acc      前面已经算好的数
+       op       等着执行的运算符（"+" "-" "*" "/"，没有就是 null）
+       entered  按下运算符之后，你有没有输入新的数（输入了才需要先算一步）
+       fresh    下一次按数字键，是"覆盖屏幕"还是"接着往后写"
+       err      是不是刚出错（比如除以 0）
+     ============================================================ */
+  const calcEl   = document.getElementById("calc");
+  const calcBtn  = document.getElementById("calc-btn");
+  const calcOut  = document.getElementById("calc-out");
+  const calcExpr = document.getElementById("calc-expr");
+  const calcKeys = document.getElementById("calc-keys");
+
+  /* CALC-LOGIC-START */
+  const calc = { cur: "0", acc: null, op: null, entered: false, fresh: true, err: false };
+  const OPS = { "+": (a, b) => a + b, "-": (a, b) => a - b, "*": (a, b) => a * b, "/": (a, b) => a / b };
+  const OP_SHOW = { "+": "+", "-": "−", "*": "×", "/": "÷" };   // 算式行里显示的符号
+
+  // 把数字变成好看的字符串：去掉 0.1+0.2=0.30000000000000004 这类浮点误差；太长就用科学计数法
+  function fmtNum(n) {
+    const t = parseFloat(n.toPrecision(12));
+    let str = String(t);
+    if (str.length > 14) str = t.toExponential(6).replace(/\.?0+e/, "e");
+    return str;
+  }
+  const calcNum = () => parseFloat(calc.cur);
+
+  function calcClear() {
+    calc.cur = "0"; calc.acc = null; calc.op = null;
+    calc.entered = false; calc.fresh = true; calc.err = false;
+    calcExpr.textContent = "";
+  }
+  function calcError(msg) {        // 出错：清空一切，屏幕上显示错误信息；下次按任何键会自动清掉
+    calcClear();
+    calc.cur = msg;
+    calc.err = true;
   }
 
-  document.getElementById("ft-open").addEventListener("click", openFt);
-  document.getElementById("ft-popup").addEventListener("click", popupFt);
-  document.getElementById("ftwin-popup").addEventListener("click", popupFt);
-  document.getElementById("ftwin-close").addEventListener("click", closeFt);
+  // 计算 a op b；除以 0 或结果超出范围时返回 { err: "说明" }
+  function calcApply(a, op, b) {
+    if (op === "/" && b === 0) return { err: "不能除以 0" };
+    const v = OPS[op](a, b);
+    if (!isFinite(v)) return { err: "超出范围" };
+    return { v };
+  }
 
-  // 只有顶部标题栏可以拖（窗口大部分是网页，拖不了）
-  const ftDrag = makeDraggable(ftWin, document.getElementById("ftwin-head"), "button");
+  function calcDigit(d) {
+    if (calc.fresh) { calc.cur = d; calc.fresh = false; }          // 刚算完/刚按了运算符：覆盖
+    else if (calc.cur === "0") calc.cur = d;                       // 避免出现 "007"
+    else if (calc.cur === "-0") calc.cur = "-" + d;                // 负数的开头："-0" 后面接数字 → "-5"
+    else if (calc.cur.replace(/[-.]/g, "").length < 12) calc.cur += d;   // 最多 12 位数字
+    calc.entered = true;
+  }
+  function calcDot() {
+    if (calc.fresh) { calc.cur = "0."; calc.fresh = false; }
+    else if (!calc.cur.includes(".")) calc.cur += ".";
+    calc.entered = true;
+  }
+
+  function calcOp(o) {
+    if (calc.op !== null && calc.entered) {
+      // 前面已经有"等着执行的运算"，而且你又输入了新的数：先算一步
+      const r = calcApply(calc.acc, calc.op, calcNum());
+      if (r.err) return calcError(r.err);
+      calc.acc = r.v;
+      calc.cur = fmtNum(r.v);
+    } else if (calc.op === null) {
+      calc.acc = calcNum();                                        // 第一个数
+    }
+    // （如果已经有运算符、但你还没输入新的数，就只是"换一个运算符"）
+    calc.op = o;
+    calc.entered = false;
+    calc.fresh = true;
+    calcExpr.textContent = fmtNum(calc.acc) + " " + OP_SHOW[o];
+  }
+
+  function calcEquals() {
+    if (calc.op === null) return;
+    const b = calcNum();
+    const r = calcApply(calc.acc, calc.op, b);
+    if (r.err) return calcError(r.err);
+    calcExpr.textContent = fmtNum(calc.acc) + " " + OP_SHOW[calc.op] + " " + fmtNum(b) + " =";
+    calc.cur = fmtNum(r.v);
+    calc.acc = null; calc.op = null;
+    calc.entered = false; calc.fresh = true;
+  }
+
+  // 开根号 / 平方：直接作用在屏幕上的数，结果替换屏幕；已经输入的"等着执行的运算"保持不变
+  function calcUnary(kind) {
+    const x = calcNum();
+    let v, label;
+    if (kind === "sqrt") {
+      if (x < 0) return calcError("无效输入");
+      v = Math.sqrt(x);
+      label = "√(" + fmtNum(x) + ")";
+    } else {
+      v = x * x;
+      if (!isFinite(v)) return calcError("超出范围");
+      label = "(" + fmtNum(x) + ")²";
+    }
+    calc.cur = fmtNum(v);
+    calc.entered = true;
+    calc.fresh = true;
+    calcExpr.textContent = (calc.op !== null ? fmtNum(calc.acc) + " " + OP_SHOW[calc.op] + " " : "") + label;
+  }
+
+  // 正负号 ±：
+  //   正在输入数字时 → 给这个数加上或去掉负号
+  //   刚按完运算符、在等你输入新数时 → 直接开始输入一个负数（先显示 "-0"，接着打数字就是 "-5" 这样）
+  //   屏幕上是算出来的结果时 → 把结果变成相反数
+  function calcNegate() {
+    const flip = () => { calc.cur = calc.cur.startsWith("-") ? calc.cur.slice(1) : "-" + calc.cur; };
+    if (calc.fresh) {
+      const waiting = calc.op !== null && !calc.entered;
+      if (waiting || calc.cur === "0") {          // 开头的 0，或者在等新数：开始输入负数
+        calc.cur = "-0";
+        calc.fresh = false;
+      } else {
+        flip();                                  // 屏幕上是结果：直接取反（仍然算"现成的数"，再按数字会覆盖）
+      }
+    } else {
+      flip();
+    }
+    calc.entered = true;
+  }
+
+  function calcBack() {            // 退格：只能删你自己正在输入的数，不能删算出来的结果
+    if (calc.fresh) return;
+    calc.cur = calc.cur.length > 1 ? calc.cur.slice(0, -1) : "0";
+    if (calc.cur === "-") calc.cur = "0";
+  }
+
+  // 刷新屏幕：数字太长时自动把字号调小；等着输入下一个数的运算符按钮会亮起来
+  function calcShow() {
+    calcOut.textContent = calc.cur;
+    calcOut.style.fontSize = calc.cur.length > 14 ? "22px" : calc.cur.length > 10 ? "28px" : "";
+    calcKeys.querySelectorAll(".op").forEach((b) => {
+      b.classList.toggle("active", calc.op !== null && !calc.entered && b.dataset.k === calc.op);
+    });
+  }
+
+  // 所有按键（鼠标点和键盘按）最终都走这里，k 就是按键的"身份"
+  function calcPress(k) {
+    if (calc.err) calcClear();                                     // 上一次出错了：先清干净
+    if (/^[0-9]$/.test(k)) calcDigit(k);
+    else if (k === ".") calcDot();
+    else if (k === "+" || k === "-" || k === "*" || k === "/") calcOp(k);
+    else if (k === "=") calcEquals();
+    else if (k === "sqrt" || k === "sq") calcUnary(k);
+    else if (k === "neg") calcNegate();
+    else if (k === "back") calcBack();
+    else if (k === "ac") calcClear();
+    calcShow();
+  }
+  /* CALC-LOGIC-END */
+
+  // 鼠标点按键：用"事件委托"，只在外面的 calc-keys 上听一次，靠 data-k 判断点的是哪个
+  calcKeys.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-k]");
+    if (btn) calcPress(btn.dataset.k);
+  });
+
+  // 键盘也能用：数字、小数点、+ - * /、Enter（或 =）、Backspace、Delete（清零）
+  // 只在计算器开着、并且你没在输入框里打字时生效
+  document.addEventListener("keydown", (e) => {
+    if (!calcEl.classList.contains("open")) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const a = document.activeElement;
+    if (a.tagName === "INPUT" || a.tagName === "TEXTAREA") return;
+    if (a.tagName === "BUTTON" && !a.dataset.k) return;           // 焦点在 X 之类的按钮上时，别抢它的回车
+    let k = null;
+    if (/^[0-9]$/.test(e.key)) k = e.key;
+    else if (e.key === ".") k = ".";
+    else if (e.key === "+" || e.key === "-" || e.key === "*" || e.key === "/") k = e.key;
+    else if (e.key === "Enter" || e.key === "=") k = "=";
+    else if (e.key === "Backspace") k = "back";
+    else if (e.key === "Delete") k = "ac";
+    if (k === null) return;
+    e.preventDefault();               // 同时阻止按钮自己被"回车触发点击"，避免算两次
+    calcPress(k);
+  });
+
+  // 打开 / 关闭
+  function openCalc() { calcEl.classList.add("open"); }
+  function closeCalc() {
+    if (!calcEl.classList.contains("open")) return;
+    aimAt(calcEl, calcBtn);                                        // 朝侧边栏的计算器按钮收进去
+    calcEl.classList.remove("open");
+  }
+  calcBtn.addEventListener("click", () => {
+    calcEl.classList.contains("open") ? closeCalc() : openCalc();
+  });
+  document.getElementById("calc-close").addEventListener("click", closeCalc);
+
+  // 可拖动（点到按键不触发拖动；在屏幕和空白处按住就能拖）
+  const calcDrag = makeDraggable(calcEl, calcEl, "button");
+  calcShow();
 
   // 缩小浏览器窗口时，如果窗口被挤到屏幕外，把它们拉回来
-  window.addEventListener("resize", () => { pomoDrag.clamp(); ftDrag.clamp(); });
+  window.addEventListener("resize", () => { pomoDrag.clamp(); calcDrag.clamp(); });
+
+  /* ============================================================
+     M. 天气（Open-Meteo：免费、不需要注册和 key）
+     做法：向 Open-Meteo 请求"未来 7 天"的预报，拿到每天的天气代码和最高/最低温，
+          再画成 7 张卡片。天气代码是国际通用的 WMO 编号（0=晴、3=阴、61=小雨……），
+          下面的 wxInfo() 负责把编号翻译成"文字 + 图标"。
+     为了省流量，结果会缓存 30 分钟；请求失败时优先显示旧的缓存，没有缓存才显示"重试"。
+     ============================================================ */
+  const WX_LAT = 1.3521;      // 【改这里】纬度
+  const WX_LON = 103.8501;    // 【改这里】经度
+  const WX_URL = "https://api.open-meteo.com/v1/forecast"
+    + "?latitude=" + WX_LAT + "&longitude=" + WX_LON
+    + "&current=temperature_2m,weather_code"
+    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    + "&timezone=Asia%2FSingapore&forecast_days=7";
+  const WX_TTL = 30 * 60 * 1000;   // 缓存多久（毫秒）
+
+  /* WX-PURE-START */
+  /* ----- 简易天气图标：全部是手写的小 SVG，画在 48×48 的格子里 ----- */
+  const COL_SUN = "#ffd35c", COL_CLOUD = "#f1f4fb", COL_RAINCLOUD = "#d5dbec", COL_STORMCLOUD = "#c3cadf", COL_DROP = "#7cc4ff";
+
+  const svgWrap = (inner) => '<svg viewBox="0 0 48 48" aria-hidden="true">' + inner + '</svg>';
+
+  // 一朵云：三个圆 + 一个圆角矩形拼成。dx / dy 是整体平移（给雨滴、闪电腾位置）
+  const cloudShape = (fill, dx, dy) =>
+    '<g transform="translate(' + dx + ' ' + dy + ')" fill="' + fill + '">' +
+    '<circle cx="17" cy="27" r="7"/><circle cx="26" cy="21" r="9"/><circle cx="35" cy="27" r="6.5"/>' +
+    '<rect x="17" y="27" width="18" height="7" rx="3"/></g>';
+
+  // 太阳的 8 道光线：绕圆心每隔 45° 画一条短线
+  function sunRays(cx, cy, r1, r2, w) {
+    let lines = "";
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4, c = Math.cos(a), s = Math.sin(a);
+      lines += '<line x1="' + (cx + c * r1).toFixed(1) + '" y1="' + (cy + s * r1).toFixed(1) +
+               '" x2="' + (cx + c * r2).toFixed(1) + '" y2="' + (cy + s * r2).toFixed(1) + '"/>';
+    }
+    return '<g stroke="' + COL_SUN + '" stroke-width="' + w + '" stroke-linecap="round">' + lines + '</g>';
+  }
+  // 一组斜着的雨滴线：每个 [x, y1, y2]，线向左下倾斜 2.5
+  const dropLines = (list, w) =>
+    '<g stroke="' + COL_DROP + '" stroke-width="' + w + '" stroke-linecap="round">' +
+    list.map((d) => '<line x1="' + d[0] + '" y1="' + d[1] + '" x2="' + (d[0] - 2.5) + '" y2="' + d[2] + '"/>').join("") + '</g>';
+
+  const WX_ICONS = {
+    sun:     svgWrap('<circle cx="24" cy="24" r="8.5" fill="' + COL_SUN + '"/>' + sunRays(24, 24, 13, 18, 2.8)),
+    partly:  svgWrap('<circle cx="18" cy="17" r="6.5" fill="' + COL_SUN + '"/>' + sunRays(18, 17, 10, 13.5, 2.4) + cloudShape(COL_CLOUD, 3, 7)),
+    cloud:   svgWrap(cloudShape(COL_CLOUD, -1, 1)),
+    fog:     svgWrap('<g stroke="#dbe2f1" stroke-width="3" stroke-linecap="round"><line x1="9" y1="17" x2="37" y2="17"/><line x1="13" y1="24" x2="41" y2="24"/><line x1="9" y1="31" x2="33" y2="31"/></g>'),
+    drizzle: svgWrap(cloudShape(COL_RAINCLOUD, -1, -4) + dropLines([[19, 33, 37.5], [29, 33, 37.5]], 2.6)),
+    rain:    svgWrap(cloudShape(COL_RAINCLOUD, -1, -5) + dropLines([[17, 32, 40], [25, 32, 40], [33, 32, 40]], 2.8)),
+    thunder: svgWrap(cloudShape(COL_STORMCLOUD, -1, -6) + '<polygon points="26.5,26 19,37.5 24.5,37.5 21.5,46 32,33 26,33 30,26" fill="' + COL_SUN + '"/>'),
+    snow:    svgWrap(cloudShape(COL_RAINCLOUD, -1, -5) + '<g fill="#fff"><circle cx="16" cy="34" r="2.3"/><circle cx="25" cy="39" r="2.3"/><circle cx="34" cy="34" r="2.3"/></g>'),
+  };
+
+  // 天气代码 → { 文字, 图标名 }（WMO 编号，Open-Meteo 用的就是这一套）
+  function wxInfo(code) {
+    if (code === 0) return { text: "晴", icon: "sun" };
+    if (code === 1) return { text: "少云", icon: "partly" };
+    if (code === 2) return { text: "多云", icon: "partly" };
+    if (code === 3) return { text: "阴", icon: "cloud" };
+    if (code === 45 || code === 48) return { text: "雾", icon: "fog" };
+    if (code >= 51 && code <= 57) return { text: "毛毛雨", icon: "drizzle" };
+    if (code === 61 || code === 66) return { text: "小雨", icon: "rain" };
+    if (code === 63) return { text: "中雨", icon: "rain" };
+    if (code === 65 || code === 67) return { text: "大雨", icon: "rain" };
+    if (code >= 71 && code <= 77) return { text: "下雪", icon: "snow" };
+    if (code === 80) return { text: "小阵雨", icon: "rain" };
+    if (code === 81) return { text: "阵雨", icon: "rain" };
+    if (code === 82) return { text: "强阵雨", icon: "rain" };
+    if (code === 85 || code === 86) return { text: "阵雪", icon: "snow" };
+    if (code >= 95) return { text: "雷暴", icon: "thunder" };      // 95、96、99
+    return { text: "未知", icon: "cloud" };
+  }
+  /* WX-PURE-END */
+
+  const wxDaysEl = document.getElementById("wx-days");
+  const wxNowEl  = document.getElementById("wx-now");
+  const wxSubEl  = document.getElementById("wx-sub");
+
+  const wxRound = (n) => Math.round(Number(n));
+
+  // 今天 / 明天 / 周几（和"你电脑上的今天"比较）
+  function wxDayLabel(date, todayStart) {
+    const diff = Math.round((date - todayStart) / 86400000);
+    if (diff === 0) return "今天";
+    if (diff === 1) return "明天";
+    return "周" + WEEK[date.getDay()];
+  }
+
+  // 加载中：先放 7 块会"呼吸"的占位
+  function wxSkeleton() {
+    wxDaysEl.innerHTML = "";
+    for (let i = 0; i < 7; i++) {
+      const d = document.createElement("div");
+      d.className = "wx-day skeleton";
+      wxDaysEl.appendChild(d);
+    }
+  }
+
+  // 失败：显示一句话 + 重试按钮
+  function wxFail() {
+    wxDaysEl.innerHTML = "";
+    wxNowEl.innerHTML = "";
+    wxSubEl.textContent = "未来 7 天预报";
+    const box = document.createElement("div");
+    box.className = "wx-fail";
+    const msg = document.createElement("span");
+    msg.textContent = "天气获取失败，请检查网络";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pill";
+    btn.textContent = "重试";
+    btn.addEventListener("click", () => { wxSkeleton(); loadWeather(true); });
+    box.append(msg, btn);
+    wxDaysEl.appendChild(box);
+  }
+
+  // 把数据画出来。data 是 Open-Meteo 返回的整个对象，stamp 是数据取回的时间
+  function wxRender(data, stamp) {
+    const d = data.daily;
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+
+    // 把"每个字段一个数组"整理成"每天一条记录"；已经过去的日子（缓存过期时可能出现）丢掉
+    const rows = d.time.map((t, i) => {
+      const p = t.split("-").map(Number);               // "2026-10-16" → [2026, 10, 16]
+      return {
+        date: new Date(p[0], p[1] - 1, p[2]),
+        m: p[1], day: p[2],
+        code: d.weather_code[i],
+        hi: d.temperature_2m_max[i],
+        lo: d.temperature_2m_min[i],
+        rain: d.precipitation_probability_max ? d.precipitation_probability_max[i] : null,
+      };
+    }).filter((r) => r.date >= todayStart);
+
+    if (!rows.length) return wxFail();
+
+    wxDaysEl.innerHTML = "";
+    rows.forEach((r, i) => {
+      const info = wxInfo(r.code);
+      const card = document.createElement("div");
+      card.className = "wx-day spot" + (i === 0 ? " today" : "");
+      card.style.setProperty("--i", i);
+      // 这里拼进去的只有：我们自己写的文字/图标，以及被 Math.round 转成数字的温度，所以用 innerHTML 是安全的
+      card.innerHTML =
+        '<div class="wx-label">' + wxDayLabel(r.date, todayStart) + '</div>' +
+        '<div class="wx-date">' + r.m + '/' + r.day + '</div>' +
+        '<div class="wx-icon">' + WX_ICONS[info.icon] + '</div>' +
+        '<div class="wx-text">' + info.text + '</div>' +
+        '<div class="wx-temp"><b>' + wxRound(r.hi) + '°</b><span>' + wxRound(r.lo) + '°</span></div>' +
+        (r.rain !== null && r.rain !== undefined ? '<div class="wx-rain">降雨 ' + wxRound(r.rain) + '%</div>' : '');
+      card.setAttribute("aria-label", wxDayLabel(r.date, todayStart) + "，" + info.text + "，最高 " + wxRound(r.hi) + " 度，最低 " + wxRound(r.lo) + " 度");
+      wxDaysEl.appendChild(card);
+    });
+
+    // 右上角"现在"
+    if (data.current && data.current.temperature_2m !== undefined) {
+      const cur = wxInfo(data.current.weather_code);
+      wxNowEl.innerHTML =
+        WX_ICONS[cur.icon] +
+        '<div><div class="wx-now-temp">' + wxRound(data.current.temperature_2m) + '°</div>' +
+        '<div class="wx-now-text">现在 · ' + cur.text + '</div></div>';
+    } else {
+      wxNowEl.innerHTML = "";
+    }
+
+    const t = new Date(stamp);
+    wxSubEl.textContent = "未来 " + rows.length + " 天预报 · 更新于 " + pad(t.getHours()) + ":" + pad(t.getMinutes());
+  }
+
+  function wxReadCache() {
+    try { return JSON.parse(localStorage.getItem("wx-cache") || "null"); } catch (e) { return null; }
+  }
+
+  // 取天气：有新鲜缓存就直接用；否则联网请求；请求失败就退回旧缓存；再不行才显示"重试"
+  async function loadWeather(force) {
+    const cache = wxReadCache();
+    if (!force && cache && Date.now() - cache.t < WX_TTL) { wxRender(cache.data, cache.t); return; }
+    try {
+      const res = await fetch(WX_URL);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      if (!data.daily || !data.daily.time) throw new Error("数据格式不对");
+      const now = Date.now();
+      wxRender(data, now);
+      try { localStorage.setItem("wx-cache", JSON.stringify({ t: now, data: data })); } catch (e) {}
+    } catch (err) {
+      if (cache && cache.data) wxRender(cache.data, cache.t);
+      else wxFail();
+    }
+  }
+
+  wxSkeleton();
+  loadWeather(false);
+  setInterval(() => loadWeather(false), 10 * 60 * 1000);   // 每 10 分钟检查一次（缓存没过期就不会真的联网）
 
   /* ---------- G. 入场动画 ---------- */
   // 等页面画好后给 body 加 "ready"，CSS 里的入场动画就开始播放

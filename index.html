@@ -598,8 +598,9 @@
   .cbtn[aria-pressed="true"] { background: #fff; color: #0c0c10; }   /* C 按钮：清爽模式开着时变成白色实心 */
   .cbtn[aria-pressed="true"]:hover { background: #fff; }
 
-  /* 番茄时钟、计算器按钮：只在清爽模式下才出现。
+  /* 音乐、番茄时钟、计算器按钮：只在清爽模式下才出现。
      不是直接 display:none，而是把高度收成 0，这样进入清爽模式时侧边栏会平滑地"长出"一个按钮 */
+  body:not(.clean) #music-btn,
   body:not(.clean) #pomo-btn,
   body:not(.clean) #calc-btn {
     height: 0;
@@ -1072,8 +1073,7 @@
   .music-info { flex: 1; min-width: 0; }
   .music-title { font-size: 16px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .music-artist { margin-top: 3px; font-size: 12.5px; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .music-lyric { min-height: 42px; margin-bottom: 12px; text-align: center; font-size: 13px; line-height: 1.5; }
-  .music-lyric .tl { font-size: 12px; color: var(--text-soft); }
+  .music-lyric { min-height: 22px; margin-bottom: 12px; text-align: center; font-size: 13px; line-height: 1.5; }
   .music-bar { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, 0.14); cursor: pointer; overflow: hidden; }
   .music-fill { width: 0; height: 100%; background: #fff; border-radius: 99px; }
   .music-times { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11.5px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
@@ -1102,7 +1102,7 @@
   .mbtn.on .i-pause { display: block; }
   .mbtn.on .i-play { display: none; }
   .music-list {
-    max-height: 132px;
+    max-height: 168px;               /* 列表最高 168px，歌多了就在里面上下滑动（鼠标滚轮 / 触控板双指） */
     margin-top: 12px;
     padding-top: 8px;
     border-top: 1px solid var(--glass-border);
@@ -1113,18 +1113,19 @@
     scrollbar-width: thin;
   }
   .music-row {
+    flex: none;                      /* 关键：不许被压扁。列表放不下时，是整个列表滑动，而不是每一行被挤小 */
     padding: 7px 8px;
     text-align: left;
     font: inherit;
     font-size: 12.5px;
+    line-height: 1.45;
     color: var(--text-soft);
     background: transparent;
     border: none;
     border-radius: 10px;
     cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;             /* 歌名太长就换行显示完整，不再用省略号截断 */
+    overflow-wrap: anywhere;
     transition: background 0.2s, color 0.2s;
   }
   .music-row:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
@@ -1306,7 +1307,7 @@
 
   <!-- ===== 右侧侧边栏（平时透明，鼠标靠近才滑出来） =====
        所有功能按钮都放在这里，从上到下排。最上面是 C（切换清爽模式，也可以直接按键盘 C），
-       中间是音乐（两种模式下都有），下面是番茄时钟和计算器（只在清爽模式下出现）。
+       下面依次是音乐、番茄时钟、计算器（这三个只在清爽模式下出现）。
        【以后加新功能】在这里再写一个 <button type="button" class="cbtn spot" ...> 就行，
        侧边栏会自己变长。 -->
   <aside class="corner glass spot" id="corner" aria-label="功能侧边栏">
@@ -1411,7 +1412,7 @@
     </div>
   </div>
 
-  <!-- ===== 音乐播放器窗口（网易云音乐，可拖动，通过侧边栏的音符按钮打开） =====
+  <!-- ===== 音乐播放器窗口（播放本地音乐文件，可拖动，通过清爽模式侧边栏的音符按钮打开） =====
        关掉窗口音乐不会停（和番茄钟一样），侧边栏的音符按钮会一直轻轻"呼吸"提醒你。 -->
   <div class="win music glass spot" id="music" role="dialog" aria-label="音乐播放器">
     <div class="pomo-head">音乐</div>
@@ -1431,8 +1432,8 @@
       </div>
     </div>
 
-    <!-- 歌词：上面一行是原文，下面一行（如果有）是翻译 -->
-    <div class="music-lyric"><div id="music-lyric"></div><div class="tl" id="music-tlyric"></div></div>
+    <!-- 歌词：当前唱到的这一句（需要在 SONGS 里给这首歌配 .lrc 歌词文件才有） -->
+    <div class="music-lyric" id="music-lyric"></div>
 
     <!-- 进度条（点一下可以跳到那个位置）和时间 -->
     <div class="music-bar" id="music-bar"><div class="music-fill" id="music-fill"></div></div>
@@ -1478,7 +1479,7 @@
      【改这里】常用网站列表
      每一行一个网站：
        { name: "显示的名字", url: "网址", icon: "图标文件名" },
-     图标是你要上传到 GitHub 的图片，和 index.html 放在同一层。
+     图标文件放在 icons 文件夹里（文件夹名在下面的 ICON_DIR），这里只写文件名，不用写 "icons/"。
      图标还没传也没关系，会先显示名字的第一个字（带渐变色）。
      想加网站：复制一行改一改；想删：删掉整行；每行末尾的逗号别漏。
      【顺序很重要】最前面的 4 个会显示在页面上的文件夹里，其余的点开文件夹后才看得到。
@@ -1495,28 +1496,30 @@
   ];
 
   /* ============================================================
-     【改这里】音乐播放器的歌曲号码（网易云音乐）
-     怎么找歌曲号码：在电脑浏览器里打开网易云音乐网页版（music.163.com），点进一首歌，
-     看浏览器地址栏，网址里 "id=" 后面那一串数字就是歌曲号码。
-       例：https://music.163.com/#/song?id=536622304   →   536622304
-     每一行写一个号码，后面加逗号；想加歌就多写一行，想删歌就删掉那一行。
-     播放顺序就是这里的顺序。下面这个 536622304 只是示例，请换成你自己的歌。
+     【改这里】资源文件夹 + 音乐列表
+     把图片和音乐分别放进仓库里的两个文件夹（和 index.html 放在同一层）：
+       icons/   网站图标（上面 SITES 里写的 icon 文件）
+       music/   音乐文件（以及可选的：封面图、歌词文件）
+     下面两个常量就是这两个文件夹的名字，如果你给文件夹起了别的名字，改这里（别漏了最后的 "/"）。
      ============================================================ */
-  const SONG_IDS = [
-    3418880644,   // 示例（来自播放器项目的示例，换成你自己的）
-    1984537504,
-    27538415,
-    27571001,
-    2730593493,
-    1980701213,
-    22817150,
-    // 123456789,   // ← 前面的 // 去掉，就变成第二首歌
-  ];
+  const ICON_DIR  = "icons/";
+  const MUSIC_DIR = "music/";
 
-  // 取歌的服务器地址。这是开源项目作者自己架的一台服务器（不是网易云官方的）：
-  // 它挂了，音乐就放不了；它也能看到你请求了哪些歌。
-  // 以后如果你有自己的服务器，把这里换成你的地址就行。
-  const MUSIC_API = "https://nmapi.dontpanic.fun";
+  /* 音乐列表：每一行一首，播放顺序就是这里的顺序；想加歌就多写一行，想删就删掉那一行，行末的逗号别漏。
+     最省事的写法：直接写文件名。如果文件名是 "歌手 - 歌名.mp3"（歌手和歌名之间是 空格-空格），
+       播放器会自动拆出歌手和歌名来显示。
+     完整写法：写成 { file: ... } 的形式，可以指定歌名、歌手，还能配封面图和歌词（封面、歌词文件也放在 music 文件夹里）。
+     注意：
+       - 文件名要和文件夹里的一模一样，包括大小写和扩展名（GitHub 的网页区分大小写）。
+       - 浏览器能直接播放 mp3、m4a、flac、ogg、wav。网易云自己的加密格式（比如 .ncm）浏览器放不了。
+       - 用网页上传文件时，单个文件不能超过 25 MB。 */
+  const SONGS = [
+    "夜行列車～nothing to lose～.mp3",
+    "ソラゴト（虚言）.mp3",
+    "Wake.mp3",
+    "Everywhere We Go.mp3",// ← 示例，换成你 music 文件夹里真实的文件名
+    // { file: "01.mp3", title: "歌名", artist: "歌手", cover: "01.jpg", lyric: "01.lrc" },   // ← 完整写法的例子
+  ];
 
   /* ---------- A. 工具：生成"首字母渐变图标"（图片没传或加载失败时用） ---------- */
   function letterIcon(box, name) {
@@ -1537,7 +1540,7 @@
     icon.className = "icon";
     if (s.icon) {
       const img = document.createElement("img");
-      img.src = s.icon;
+      img.src = assetPath(ICON_DIR, s.icon);   // 例："bilibili.png" → "icons/bilibili.png"
       img.alt = "";
       img.onerror = () => { img.remove(); letterIcon(icon, s.name); };  // 图片加载失败 → 改用首字母
       icon.appendChild(img);
@@ -1928,7 +1931,7 @@
     cleanBtn.setAttribute("aria-pressed", String(on));
 
     // 退出清爽模式 = 番茄钟停止（你要求的规则）
-    if (!on) { stopPomo(); closeCalc(); }
+    if (!on) { stopPomo(); closeCalc(); closeMusic(); }   // 音乐窗口会收起，但音乐不会停；想暂停：再按 C，打开音乐窗口
   }
   const toggleClean = () => setClean(!isClean());
 
@@ -2793,21 +2796,14 @@
   setInterval(() => loadWeather(false), 10 * 60 * 1000);   // 每 10 分钟检查一次（缓存没过期就不会真的联网）
 
   /* ============================================================
-     N. 音乐播放器（网易云音乐）
-     流程：点播放 → 向服务器要这首歌的"播放地址 / 详情 / 歌词" → 用浏览器自带的 Audio 播放
-           → 放完自动按模式切到下一首（列表循环 / 单曲循环 / 随机）。
-     歌曲号码和服务器地址在上面的 SONG_IDS / MUSIC_API。
-
-     这部分的取歌思路和歌词解析改自开源项目 embedded-netease-music-player：
+     N. 音乐播放器（本地音乐文件）
+     流程：点播放 → 浏览器直接从 music 文件夹里加载这首歌 → 放完自动按模式切到下一首
+           （列表循环 / 单曲循环 / 随机）。
+     歌曲列表在上面的 SONGS，文件夹名在 MUSIC_DIR。不需要联网请求任何服务器。
+     歌词解析（parseLyrics）的思路参考了开源项目 embedded-netease-music-player：
        Copyright 2020 Shengqiu Li
        https://github.com/dontpanic92/embedded-netease-music-player
        Licensed under the MIT license.
-     和原项目不同的地方：
-       - 原项目一次只能放一首、单曲循环；这里改成了歌曲列表；
-       - 每首歌开始播放的那一刻才去要播放地址（地址大约 20 分钟就会过期，不能提前要）；
-       - 页面上的文字都用 textContent 写入，服务器返回什么都不会被当成代码执行；
-       - 图片和音频地址如果是 http 开头，会改成 https（不然 https 页面里会被浏览器拦掉）；
-       - 没有带原项目里"伪造国内 IP"的参数，所以有区域限制的歌会放不了。
      ============================================================ */
   /* MUSIC-PURE-START */
   // 秒数 → "03:25"
@@ -2816,8 +2812,28 @@
     return pad(Math.floor(sec / 60)) + ":" + pad(Math.floor(sec % 60));
   };
 
-  // http → https
-  const toHttps = (u) => (u ? String(u).replace(/^http:\/\//i, "https://") : "");
+  // 把"文件夹 + 文件名"拼成网址（网站图标和音乐都用它）。
+  // 每一段都做一次编码，所以文件名里有空格、中文、# ? 这些字符都不会出问题。
+  function assetPath(dir, name) {
+    return dir + String(name).split("/").map(encodeURIComponent).join("/");
+  }
+
+  // 把 SONGS 里的一项整理成统一的格式 { file, title, artist, cover, lyric }
+  //   写成字符串 "歌手 - 歌名.mp3"：自动从文件名里拆出歌手和歌名
+  //   写成对象 { file, title, artist, cover, lyric }：写了的用你写的，没写的自动补
+  function songFromEntry(entry) {
+    const o = typeof entry === "string" ? { file: entry } : (entry || {});
+    const file = String(o.file || "");
+    const base = file.replace(/^.*\//, "").replace(/\.[^.]+$/, "");   // 去掉前面的文件夹和后面的扩展名
+    const sep = base.indexOf(" - ");
+    return {
+      file: file,
+      title: o.title || (sep > 0 ? base.slice(sep + 3).trim() : base) || "未命名",
+      artist: o.artist !== undefined ? o.artist : (sep > 0 ? base.slice(0, sep).trim() : ""),
+      cover: o.cover || "",
+      lyric: o.lyric || "",
+    };
+  }
 
   // 解析 LRC 歌词。一行长这样："[01:23.45]歌词内容"（有时一行有好几个时间标记）
   // 返回按时间从早到晚排好的数组：[{ seconds: 83.45, text: "歌词内容" }, ...]
@@ -2868,7 +2884,6 @@
   const mTitleEl   = document.getElementById("music-title");
   const mArtistEl  = document.getElementById("music-artist");
   const mLyricEl   = document.getElementById("music-lyric");
-  const mTLyricEl  = document.getElementById("music-tlyric");
   const mBarEl     = document.getElementById("music-bar");
   const mFillEl    = document.getElementById("music-fill");
   const mCurEl     = document.getElementById("music-cur");
@@ -2879,6 +2894,7 @@
   const mNextBtn   = document.getElementById("music-next");
   const mListEl    = document.getElementById("music-list");
 
+  const mSongs = SONGS.map(songFromEntry).filter((song) => song.file);   // 整理好的歌曲列表
   const MODES = [
     { key: "list",    label: "列表循环" },
     { key: "one",     label: "单曲循环" },
@@ -2886,23 +2902,11 @@
   ];
   let mModeIdx = 0;
   const mAudio = new Audio();      // 真正放声音的东西。不放进页面也能播，所以关掉窗口音乐也不会停
-  const mDetails = {};             // 歌曲号码 → { name, artist, pic }，拿到之后缓存在这里
   let mIndex = -1;                 // 现在是列表里的第几首（-1 = 还没开始）
-  let mToken = 0;                  // 每次换歌 +1。网络回来时对一下号，不是最新的就丢掉，避免"后点的歌被先点的盖掉"
+  let mToken = 0;                  // 每次换歌 +1。异步结果回来时对一下号，不是最新的就丢掉
   let mFails = 0;                  // 连续放不了几首了
   let mFailTimer = 0;
-  let mLines = [], mTLines = [];   // 当前这首的歌词（原文 / 翻译）
-  let mListRendered = false;
-  let mDetailsLoaded = false;
-
-  // 向服务器要数据（返回 JSON）
-  async function musicGet(path) {
-    const res = await fetch(MUSIC_API + path);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    return res.json();
-  }
-
-  function mAuthors(song) { return (song.ar || []).map((a) => a.name).join(" / "); }
+  let mLines = [];                 // 当前这首的歌词
 
   // 显示歌名 / 歌手；同时告诉系统（Chromebook 的媒体键、通知栏）现在放的是什么
   function showInfo(title, artist) {
@@ -2915,124 +2919,91 @@
   function setCover(url) {
     if (!url) { mCoverEl.style.display = "none"; return; }
     mCoverEl.onload = () => { mCoverEl.style.display = "block"; };
-    mCoverEl.onerror = () => { mCoverEl.style.display = "none"; };
-    mCoverEl.src = toHttps(url) + "?param=160y160";     // 让网易云的图片服务器直接给小图，省流量
+    mCoverEl.onerror = () => { mCoverEl.style.display = "none"; };      // 封面文件找不到就算了，显示默认的渐变底
+    mCoverEl.src = url;
   }
 
-  // 歌曲列表：每首一行，点哪首播哪首；现在这首高亮
+  // 歌曲列表：每首一行（歌名太长会换行显示完整，列表放不下时整体上下滑动）；点哪首播哪首；现在这首高亮
   function renderList() {
     mListEl.textContent = "";
-    if (!SONG_IDS.length) {
+    if (!mSongs.length) {
       const tip = document.createElement("div");
       tip.className = "music-empty";
-      tip.textContent = "还没有歌。请在代码里的 SONG_IDS 填上歌曲号码。";
+      tip.textContent = "还没有歌。把音乐文件放进 music 文件夹，再在代码里的 SONGS 列表里写上文件名。";
       mListEl.appendChild(tip);
       return;
     }
-    SONG_IDS.forEach((id, i) => {
+    mSongs.forEach((song, i) => {
       const row = document.createElement("button");
       row.type = "button";
       row.className = "music-row" + (i === mIndex ? " current" : "");
       row.dataset.i = String(i);
-      const d = mDetails[String(id)];
-      row.textContent = (i + 1) + ". " + (d ? d.name + (d.artist ? " · " + d.artist : "") : "歌曲 " + id);
+      row.textContent = (i + 1) + ". " + song.title + (song.artist ? " · " + song.artist : "");
       mListEl.appendChild(row);
     });
   }
   function markCurrent() {
     Array.prototype.forEach.call(mListEl.children, (row, i) => {
       row.classList.toggle("current", i === mIndex);
-      if (i === mIndex && row.scrollIntoView) row.scrollIntoView({ block: "nearest" });
+      if (i === mIndex && row.scrollIntoView) row.scrollIntoView({ block: "nearest" });   // 把当前这首滑到可见的位置
     });
   }
   mListEl.addEventListener("click", (e) => {
     const row = e.target.closest(".music-row");
     if (row) playTrack(Number(row.dataset.i));
   });
+  renderList();
 
-  // 第一次打开窗口时，一次性把整个列表的歌名要回来（不用每首歌单独要）
-  async function loadListDetails() {
-    if (mDetailsLoaded || !SONG_IDS.length) return;
-    mDetailsLoaded = true;
-    try {
-      const data = await musicGet("/song/detail?ids=" + SONG_IDS.join(","));
-      (data.songs || []).forEach((s) => {
-        mDetails[String(s.id)] = { name: s.name, artist: mAuthors(s), pic: s.al && s.al.picUrl };
-      });
-    } catch (e) {
-      mDetailsLoaded = false;          // 失败了，下次打开窗口再试
-    }
-    renderList();
-  }
-
-  // 放不了：显示原因，过 1.5 秒自动跳到下一首；如果整个列表连着都放不了，就停下来，不要无限循环
+  // 放不了（文件名写错 / 文件还没上传 / 格式浏览器不支持）：显示原因，过 1.5 秒自动跳到下一首；
+  // 如果整个列表连着都放不了，就停下来，不要无限循环
   function trackFailed(token, msg) {
     if (token !== mToken) return;
     mFails++;
     mArtistEl.textContent = msg;
-    if (mFails >= SONG_IDS.length) {
+    if (mFails >= mSongs.length) {
       mFails = 0;
-      mArtistEl.textContent = "列表里的歌暂时都放不了";
+      mArtistEl.textContent = "列表里的歌都放不了：请检查文件名、文件夹和格式";
       return;
     }
     mFailTimer = setTimeout(() => { if (token === mToken) playTrack(mIndex + 1); }, 1500);
   }
 
   // 播放列表里的第 i 首
-  async function playTrack(i) {
-    if (!SONG_IDS.length) return;
+  function playTrack(i) {
+    if (!mSongs.length) return;
     clearTimeout(mFailTimer);
-    mIndex = ((i % SONG_IDS.length) + SONG_IDS.length) % SONG_IDS.length;
-    const id = String(SONG_IDS[mIndex]);
+    mIndex = ((i % mSongs.length) + mSongs.length) % mSongs.length;
+    const song = mSongs[mIndex];
     const token = ++mToken;
     mAudio.pause();
-    mLyricEl.textContent = ""; mTLyricEl.textContent = "";
+    mLines = [];
+    mLyricEl.textContent = "";
     mFillEl.style.width = "0%"; mCurEl.textContent = "00:00"; mDurEl.textContent = "00:00";
-    const known = mDetails[id];
-    showInfo(known ? known.name : "加载中…", known ? known.artist : "");
-    setCover(known && known.pic);
+    showInfo(song.title, song.artist);
+    setCover(song.cover ? assetPath(MUSIC_DIR, song.cover) : "");
     markCurrent();
 
-    // 播放地址、详情、歌词三个请求同时发。地址是必须的；详情和歌词失败了也不影响播放
-    const [u, d, l] = await Promise.allSettled([
-      musicGet("/song/url?id=" + id),
-      musicGet("/song/detail?ids=" + id),
-      musicGet("/lyric?id=" + id),
-    ]);
-    if (token !== mToken) return;                       // 等的这段时间里你已经点了别的歌
+    // 歌词（可选）：读取同一个文件夹里的 .lrc 文本文件。读不到就算了，只是没有歌词显示
+    if (song.lyric) {
+      fetch(assetPath(MUSIC_DIR, song.lyric))
+        .then((r) => (r.ok ? r.text() : ""))
+        .then((text) => { if (token === mToken) mLines = parseLyrics(text); })
+        .catch(() => {});
+    }
 
-    if (d.status === "fulfilled" && d.value && d.value.songs && d.value.songs[0]) {
-      const s = d.value.songs[0];
-      mDetails[id] = { name: s.name, artist: mAuthors(s), pic: s.al && s.al.picUrl };
-      showInfo(s.name, mAuthors(s));
-      setCover(s.al && s.al.picUrl);
-    }
-    mLines = []; mTLines = [];
-    if (l.status === "fulfilled" && l.value) {
-      mLines = parseLyrics(l.value.lrc && l.value.lrc.lyric);
-      mTLines = parseLyrics(l.value.tlyric && l.value.tlyric.lyric);
-    }
-    const song = u.status === "fulfilled" && u.value && u.value.data && u.value.data[0];
-    if (!song || !song.url) {
-      return trackFailed(token, u.status === "rejected" ? "音乐服务暂时连不上" : "这首暂时放不了（可能有区域或会员限制）");
-    }
-    if (song.freeTrialInfo) mArtistEl.textContent += "（仅试听片段）";
-
-    mAudio.src = toHttps(song.url);
-    try {
-      await mAudio.play();
-    } catch (err) {
+    mAudio.src = assetPath(MUSIC_DIR, song.file);
+    mAudio.play().catch((err) => {
       if (token !== mToken) return;
-      if (err && err.name === "NotAllowedError") mArtistEl.textContent = "点一下 ▶ 开始播放";   // 浏览器拦了自动播放
-      else if (err && err.name !== "AbortError") trackFailed(token, "这首加载失败");
-    }
+      // 浏览器拦了自动播放：提示你点一下 ▶（文件打不开的情况由下面的 error 事件处理）
+      if (err && err.name === "NotAllowedError") mArtistEl.textContent = "点一下 ▶ 开始播放";
+    });
   }
 
   // ----- 播放器自己的事件 -----
   function syncPlayState() {
     const playing = !mAudio.paused;
     mPlayBtn.classList.toggle("on", playing);
-    musicBtn.classList.toggle("playing", playing);      // 侧边栏的按钮会"呼吸"
+    musicBtn.classList.toggle("playing", playing);      // 侧边栏的音符按钮会"呼吸"
     if (typeof navigator !== "undefined" && navigator.mediaSession) navigator.mediaSession.playbackState = playing ? "playing" : "paused";
   }
   mAudio.addEventListener("play", syncPlayState);
@@ -3043,30 +3014,29 @@
     mCurEl.textContent = mmss(t);
     mDurEl.textContent = mmss(dur);
     mFillEl.style.width = (isFinite(dur) && dur > 0 ? (t / dur) * 100 : 0) + "%";
-    const l1 = lyricAt(mLines, t), l2 = lyricAt(mTLines, t);
-    if (mLyricEl.textContent !== l1) mLyricEl.textContent = l1;
-    if (mTLyricEl.textContent !== l2) mTLyricEl.textContent = l2;
+    const line = lyricAt(mLines, t);
+    if (mLyricEl.textContent !== line) mLyricEl.textContent = line;
   });
   mAudio.addEventListener("ended", () => {
-    const n = nextIndex(MODES[mModeIdx].key, mIndex, SONG_IDS.length, 1, true, Math.random);
+    const n = nextIndex(MODES[mModeIdx].key, mIndex, mSongs.length, 1, true, Math.random);
     if (n === mIndex) { mAudio.currentTime = 0; mAudio.play().catch(() => {}); }   // 单曲循环：直接从头再放
     else playTrack(n);
   });
   mAudio.addEventListener("error", () => {
-    if (mAudio.getAttribute("src")) trackFailed(mToken, "这首加载失败");
+    if (mAudio.getAttribute("src")) trackFailed(mToken, "找不到这个文件，或者格式浏览器放不了");
   });
 
   // ----- 按钮 -----
-  const mStartIndex = () => (MODES[mModeIdx].key === "shuffle" ? Math.floor(Math.random() * SONG_IDS.length) : 0);
+  const mStartIndex = () => (MODES[mModeIdx].key === "shuffle" ? Math.floor(Math.random() * mSongs.length) : 0);
   mPlayBtn.addEventListener("click", () => {
     if (!mAudio.getAttribute("src")) { playTrack(mIndex === -1 ? mStartIndex() : mIndex); return; }   // 还没开始，或者上一首没放成功
     if (mAudio.paused) mAudio.play().catch(() => {}); else mAudio.pause();
   });
   mPrevBtn.addEventListener("click", () => {
-    playTrack(mIndex === -1 ? mStartIndex() : nextIndex(MODES[mModeIdx].key, mIndex, SONG_IDS.length, -1, false, Math.random));
+    playTrack(mIndex === -1 ? mStartIndex() : nextIndex(MODES[mModeIdx].key, mIndex, mSongs.length, -1, false, Math.random));
   });
   mNextBtn.addEventListener("click", () => {
-    playTrack(mIndex === -1 ? mStartIndex() : nextIndex(MODES[mModeIdx].key, mIndex, SONG_IDS.length, 1, false, Math.random));
+    playTrack(mIndex === -1 ? mStartIndex() : nextIndex(MODES[mModeIdx].key, mIndex, mSongs.length, 1, false, Math.random));
   });
   mModeBtn.addEventListener("click", () => {
     mModeIdx = (mModeIdx + 1) % MODES.length;
@@ -3090,11 +3060,7 @@
   }
 
   // ----- 窗口的打开 / 关闭 / 拖动 -----
-  function openMusic() {
-    musicEl.classList.add("open");
-    if (!mListRendered) { mListRendered = true; renderList(); }
-    loadListDetails();
-  }
+  function openMusic() { musicEl.classList.add("open"); }
   function closeMusic() {
     if (!musicEl.classList.contains("open")) return;
     aimAt(musicEl, musicBtn);                // 朝侧边栏的音符按钮收进去（音乐不会停）

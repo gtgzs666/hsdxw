@@ -50,6 +50,8 @@
     color: var(--text);
     background: #0a0b12;      /* 图片没加载出来时的保底色 */
     min-height: 100vh;
+    display: flex;            /* 上下排：主内容在上，署名在最下；内容不够高时，署名也会沉到屏幕底部 */
+    flex-direction: column;
   }
 
   /* ---------- 2. 固定背景图层 ---------- */
@@ -82,19 +84,6 @@
     transition: opacity 0.9s var(--ease);
   }
   body.clean .bg::after { opacity: 0.25; }
-
-  /* 屏幕底部的一层渐隐黑影：让固定的搜索栏在任何背景图上都看得清 */
-  body::after {
-    content: "";
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    height: 170px;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
-    pointer-events: none;   /* 不挡鼠标 */
-    z-index: 90;
-    transition: opacity 0.6s var(--ease);
-  }
-  body.clean::after { opacity: 0; }   /* 清爽模式下不需要这层黑影 */
 
   /* ---------- 3. 黑色磨砂玻璃 ----------
      class="glass" 就是玻璃。核心是 backdrop-filter：把元素"背后的画面"模糊掉。 */
@@ -152,15 +141,21 @@
 
   /* ---------- 5. 页面整体布局 ---------- */
   .page {
+    width: 100%;
     max-width: 1100px;
     margin: 0 auto;
-    /* 底部留出 170px，这样往下滑到底时，内容不会被固定的搜索栏挡住 */
-    padding: 48px 24px 170px;
+    flex: 1 0 auto;                  /* 占满 body 里剩下的高度，把下面的署名顶到最底部 */
+    align-content: start;            /* 模块仍然从上往下紧挨着排，多出来的高度是留白 */
+    padding: 48px 24px 24px;
     display: grid;
     gap: 22px;
     grid-template-columns: repeat(12, 1fr);   /* 12 列：每个模块占几列，就是它的宽度（5+7 / 8+4 / 12） */
   }
   .profile  { grid-column: span 5; }   /* 第一行：个人信息占 5 列 */
+  /* 第一行两个模块的高度是"固定"的（不再由内容撑开）：
+     这样不管一言随机到多长的句子、日程写了几行，模块的大小都不会变，页面也不会跟着抖。
+     想再高一点/矮一点，改这个数字（两个模块要一起改，才能保持一样高）。 */
+  .profile, .clockcal { height: 380px; }
   .clockcal { grid-column: span 7; }   /*          时间日历占 7 列 */
   .weather  { grid-column: span 8; }   /* 第二行：天气占 8 列 = 左边 2/3 */
   .folder   { grid-column: span 4; }   /*          网站文件夹占 4 列 = 右边 1/3 */
@@ -171,6 +166,7 @@
     padding: 28px;
     display: flex;
     flex-direction: column;     /* 上下排：上面是头像+欢迎，下面是今日日程 */
+    justify-content: space-between;   /* 固定高度后：头像区贴上，日程区贴下，句子长短只会改变中间的空白 */
     gap: 24px;
   }
   .profile-top {
@@ -209,7 +205,15 @@
     transition: opacity 0.3s, transform 0.3s var(--ease);
   }
   .quote.swap { opacity: 0; transform: translateY(6px); }   /* 换句子时的淡出 */
-  .quote small { display: block; margin-top: 6px; font-size: 13px; opacity: 0.8; }
+  .quote small { display: block; margin-top: 6px; font-size: 13px; opacity: 0.8;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* 出处：只占 1 行，太长用 … */
+  .profile-top > div:last-child { flex: 1; min-width: 0; }   /* min-width:0 才能让上面的省略号生效 */
+  #quote-text {                    /* 句子：最多 3 行，超出的部分用 … 收起来 */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 
   /* ---------- 6.5 今日日程 ----------
      两个状态叠在同一个位置（grid-area: 1/1）：
@@ -354,7 +358,7 @@
   .weekday { margin-top: 14px; font-size: 22px; font-weight: 900; }
   .fulldate { margin-top: 4px; font-size: 15px; color: var(--text-soft); }
 
-  .calendar { padding-left: 28px; border-left: 1px solid var(--glass-border); }  /* 左边一条分隔线 */
+  .calendar { padding-left: 28px; border-left: 1px solid var(--glass-border); display: flex; flex-direction: column; justify-content: center; }  /* 左边一条分隔线 */
   .cal-title { font-size: 18px; font-weight: 900; margin-bottom: 12px; }
   .cal-grid {
     display: grid;
@@ -424,12 +428,17 @@
   .icon img { width: 100%; height: 100%; object-fit: cover; }
   .tile .name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* ---------- 9. 模块④：底部搜索栏（固定，永远在最上层） ---------- */
+  /* ---------- 9. 模块④：底部搜索栏（平时藏着，需要时才出现） ----------
+     出现的三种情况（和右侧侧边栏是同一个思路）：
+       ① 鼠标移到屏幕底部 —— JS 给它加上 .near
+       ② 按 "/" 键 —— 输入框获得焦点，:focus-within 生效
+       ③ 里面已经有文字 —— JS 给它加上 .has-text
+     它在最上层（z-index 140），比"输入时的模糊层"（135）还高，所以模糊时只有它是清晰的。 */
   .searchbar {
     position: fixed;                 /* fixed = 固定在屏幕上，页面怎么滚它都不动 */
     left: 50%;
     bottom: calc(26px + env(safe-area-inset-bottom, 0px));
-    z-index: 100;                    /* 数字越大越在上面；比其他所有东西都大 */
+    z-index: 140;                    /* 数字越大越在上面；比其他所有东西（包括模糊层）都大 */
     width: min(620px, 90vw);
     height: 58px;
     padding: 0 22px;
@@ -438,7 +447,18 @@
     align-items: center;
     gap: 12px;
     transform: translateX(-50%);     /* 配合 left:50% 做水平居中 */
-    transition: width 0.5s var(--ease), box-shadow 0.35s, background 0.35s, opacity 0.6s var(--ease);
+    opacity: 0;                      /* 平时完全透明 */
+    translate: 0 16px;               /* 并且往下沉一点，出现时再升起来 */
+    pointer-events: none;            /* 藏着的时候不挡住后面的东西 */
+    transition: width 0.5s var(--ease), box-shadow 0.35s, background 0.35s,
+                opacity 0.4s var(--ease), translate 0.4s var(--ease);
+  }
+  .searchbar.near,
+  .searchbar:focus-within,
+  .searchbar.has-text {
+    opacity: 1;
+    translate: 0 0;
+    pointer-events: auto;
   }
   /* 点进搜索框：变宽 + 外面一圈光 */
   .searchbar:focus-within {
@@ -459,14 +479,35 @@
   }
   .searchbar input::placeholder { color: var(--text-soft); }
 
+  /* ---------- 9.6b 搜索时的整屏模糊 ----------
+     搜索框一获得焦点（点进去，或者按 / 键），这一层就盖住整个屏幕，把它后面的一切
+     （包括背景、模块、侧边栏、悬浮窗口）都模糊掉，只有搜索栏（更高的层级）保持清晰，
+     效果和展开网站文件夹时一样。模糊程度是从 0 慢慢渐变上去的。
+     平时它不挡鼠标；模糊时点它，会清空并收起搜索栏。 */
+  .search-veil {
+    position: fixed;
+    inset: 0;
+    z-index: 135;
+    pointer-events: none;
+    background: rgba(4, 5, 12, 0);
+    -webkit-backdrop-filter: blur(0px);
+            backdrop-filter: blur(0px);
+    transition: background 0.45s var(--ease), backdrop-filter 0.45s var(--ease), -webkit-backdrop-filter 0.45s var(--ease);
+  }
+  body.search-active .search-veil {
+    pointer-events: auto;
+    background: rgba(4, 5, 12, 0.45);
+    -webkit-backdrop-filter: blur(24px) saturate(120%);
+            backdrop-filter: blur(24px) saturate(120%);
+  }
+
   /* ---------- 9.5 清爽模式 ----------
      JS 给 <body> 加上 class="clean" 就进入清爽模式。
      下面所有 body.clean 开头的规则，都是"清爽模式下才生效"。 */
 
   /* 所有模块：淡出。visibility 要等淡出播完（0.6s）才隐藏，所以能看到淡出动画 */
   .page { transition: opacity 0.6s var(--ease), visibility 0s; }
-  body.clean .page,
-  body.clean .searchbar {
+  body.clean .page {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -774,6 +815,8 @@
   /* ---------- 9.10 计算器（清爽模式侧边栏里的第三个按钮） ---------- */
   .calc { right: 372px; bottom: 28px; width: 276px; padding: 20px; }   /* 停在番茄钟窗口的左边，两个都开也不重叠 */
   .calc-screen {
+    position: relative;              /* 给"飞行的算式"当定位基准 */
+    overflow: hidden;                /* 飞行时超出屏幕的部分不显示 */
     margin-bottom: 14px;
     padding: 10px 14px 12px;
     min-height: 82px;
@@ -798,7 +841,21 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     overflow: hidden;
+    transform-origin: 100% 60%;      /* 结果出现时，以右边缘为中心放大 */
     transition: font-size 0.2s;
+  }
+  /* 计算动画里"飞行的算式"：由 JS 临时创建，飞到上方的算式行后就消失，换成真正的算式行 */
+  .calc-ghost {
+    position: absolute;
+    right: 14px;                     /* 和屏幕的右内边距对齐 */
+    width: max-content;
+    font-size: 38px;                 /* 起点：和结果同样大 */
+    font-weight: 900;
+    line-height: 1.15;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    transform-origin: 100% 50%;      /* 以右边缘为中心缩小，这样算式始终靠右 */
+    pointer-events: none;
   }
   .calc-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }   /* 4 列 6 行的按键网格 */
   .ck {
@@ -978,6 +1035,108 @@
                 scale 0.5s cubic-bezier(0.32, 0.72, 0, 1) calc(var(--i) * 45ms + 140ms);
   }
 
+  /* ---------- 9.14 署名 ----------
+     放在页面内容的最末尾，往下滑到底才会看到（内容不够高时，它会沉在屏幕底部）。
+     下面留了 104px 的空白：滑到底时它正好停在搜索栏（出现时）的上方，不会被挡住。
+     清爽模式下会淡出，让壁纸干干净净。 */
+  .credit {
+    flex: none;
+    padding: 4px 0 104px;
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: rgba(244, 244, 246, 0.5);
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+    transition: opacity 0.6s var(--ease);
+  }
+  body.clean .credit { opacity: 0; }
+
+  /* ---------- 9.15 音乐播放器窗口（网易云音乐） ----------
+     外壳用的是和番茄钟、计算器一样的 .win（可拖动、从侧边栏按钮里长出来 / 收回去）。 */
+  .music { right: 92px; top: 12vh; width: 300px; padding: 20px 20px 16px; }
+  .music-now { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; padding-right: 26px; }
+  .music-cover {
+    position: relative;
+    flex: none;
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, #7c8cff, #c46bff);   /* 还没有封面时的渐变底 */
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  }
+  .music-cover svg { width: 28px; height: 28px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .music-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+  .music-info { flex: 1; min-width: 0; }
+  .music-title { font-size: 16px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .music-artist { margin-top: 3px; font-size: 12.5px; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .music-lyric { min-height: 42px; margin-bottom: 12px; text-align: center; font-size: 13px; line-height: 1.5; }
+  .music-lyric .tl { font-size: 12px; color: var(--text-soft); }
+  .music-bar { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, 0.14); cursor: pointer; overflow: hidden; }
+  .music-fill { width: 0; height: 100%; background: #fff; border-radius: 99px; }
+  .music-times { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11.5px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
+  .music-ctrl { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .mbtn {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.25s, transform 0.3s var(--ease);
+  }
+  .mbtn:hover { background: rgba(255, 255, 255, 0.16); transform: scale(1.06); }
+  .mbtn:active { transform: scale(0.94); }
+  .mbtn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .mbtn svg { width: 20px; height: 20px; fill: currentColor; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+  .mbtn.big { width: 50px; height: 50px; color: #0c0c10; background: #fff; }
+  .mbtn.big:hover { background: #e9e9ef; }
+  .mbtn.mode { width: auto; height: 32px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 700; }
+  .mbtn .i-pause { display: none; }                   /* 播放中显示"暂停"图标，暂停时显示"播放"图标 */
+  .mbtn.on .i-pause { display: block; }
+  .mbtn.on .i-play { display: none; }
+  .music-list {
+    max-height: 132px;
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--glass-border);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    scrollbar-width: thin;
+  }
+  .music-row {
+    padding: 7px 8px;
+    text-align: left;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--text-soft);
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background 0.2s, color 0.2s;
+  }
+  .music-row:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+  .music-row.current { background: rgba(255, 255, 255, 0.14); color: #fff; font-weight: 700; }
+  .music-empty { padding: 10px 8px; font-size: 12.5px; line-height: 1.6; color: var(--text-soft); }
+  /* 音乐正在播放时，侧边栏里的音符按钮会轻轻"呼吸"，提醒你它还在放（即使窗口关着） */
+  .cbtn.playing { animation: musicPulse 2.4s ease-in-out infinite; }
+  @keyframes musicPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+    50% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.22); }
+  }
+
   /* ---------- 10. 入场动画（只做一次） ----------
      模块按顺序从下方浮现。--i 是顺序号（在 HTML 里写），越小越先出现。 */
   .reveal {
@@ -990,8 +1149,9 @@
 
   /* ---------- 11. 手机 / 窄屏：全部改成单列，上下排 ---------- */
   @media (max-width: 860px) {
-    .page { grid-template-columns: 1fr; padding: 28px 16px 170px; }
+    .page { grid-template-columns: 1fr; padding: 28px 16px 24px; }
     .page > * { grid-column: 1 / -1; }   /* 窄屏时每个模块都占满一整行 */
+    .profile, .clockcal { height: auto; }   /* 窄屏单列排列时不需要固定高度（句子最多 3 行，本身就有上限） */
     .clockcal { grid-template-columns: 1fr; }
     .calendar { padding-left: 0; border-left: none; padding-top: 22px; border-top: 1px solid var(--glass-border); }
   }
@@ -1021,7 +1181,8 @@
           <img src="avatar.jpg" alt="头像" onerror="this.remove()">
         </div>
         <div>
-          <h1>欢迎，海参</h1>
+          <!-- 问候语由 script 按当前时间自动换（早上好 / 中午好 / 下午好 / 晚上好 …） -->
+          <h1 id="greeting">你好，海参</h1>
           <!-- 每日金句：由 script 从 hitokoto 接口取来填进去。点一下可以换一句 -->
           <p class="quote" id="quote" title="点击换一句">
             <span id="quote-text">正在获取今日金句…</span>
@@ -1117,16 +1278,22 @@
 
   </main>
 
-  <!-- ===== 模块④：底部搜索栏（固定在屏幕最下方，始终在最上层） =====
+  <!-- 署名：在页面内容的最末尾，往下滑到底才会看到（样式见 CSS 9.14） -->
+  <footer class="credit">Made with Claude</footer>
+
+  <!-- ===== 输入时的整屏模糊层（样式见 CSS 9.6b；script 的 F 部分控制它） ===== -->
+  <div class="search-veil" id="search-veil"></div>
+
+  <!-- ===== 模块④：底部搜索栏（平时藏着；鼠标移到屏幕底部或按 / 键才出现） =====
        提交后用 Google 搜索。想换百度：action 改成 https://www.baidu.com/s ，
        并把 input 里的 name="q" 改成 name="wd" -->
-  <form class="searchbar glass spot reveal" style="--i:3"
+  <form class="searchbar glass spot" id="searchbar"
         action="https://www.google.com/search" method="get">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
     </svg>
-    <input type="text" name="q" id="q" placeholder="搜索，或按 / 键快速聚焦" autocomplete="off" aria-label="搜索">
+    <input type="text" name="q" id="q" placeholder="搜索…（Esc 退出）" autocomplete="off" aria-label="搜索">
   </form>
 
   <!-- ===== 清爽模式：屏幕正上方的时钟 =====
@@ -1139,11 +1306,15 @@
 
   <!-- ===== 右侧侧边栏（平时透明，鼠标靠近才滑出来） =====
        所有功能按钮都放在这里，从上到下排。最上面是 C（切换清爽模式，也可以直接按键盘 C），
-       下面是番茄时钟和计算器（只在清爽模式下出现）。
+       中间是音乐（两种模式下都有），下面是番茄时钟和计算器（只在清爽模式下出现）。
        【以后加新功能】在这里再写一个 <button type="button" class="cbtn spot" ...> 就行，
        侧边栏会自己变长。 -->
   <aside class="corner glass spot" id="corner" aria-label="功能侧边栏">
     <button type="button" class="cbtn spot" id="clean-btn" title="清爽模式（按 C）" aria-label="切换清爽模式" aria-pressed="false">C</button>
+    <button type="button" class="cbtn spot" id="music-btn" title="音乐" aria-label="打开或关闭音乐播放器">
+      <!-- 音符图标 -->
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v12"></path><circle cx="6.5" cy="18" r="2.5"></circle><circle cx="16.5" cy="16" r="2.5"></circle></svg>
+    </button>
     <button type="button" class="cbtn spot" id="pomo-btn" title="番茄时钟" aria-label="打开或关闭番茄时钟">
       <!-- 一个小秒表图标（SVG，不需要额外图片） -->
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1240,6 +1411,52 @@
     </div>
   </div>
 
+  <!-- ===== 音乐播放器窗口（网易云音乐，可拖动，通过侧边栏的音符按钮打开） =====
+       关掉窗口音乐不会停（和番茄钟一样），侧边栏的音符按钮会一直轻轻"呼吸"提醒你。 -->
+  <div class="win music glass spot" id="music" role="dialog" aria-label="音乐播放器">
+    <div class="pomo-head">音乐</div>
+    <button type="button" class="pomo-close" id="music-close" aria-label="关闭音乐窗口">
+      <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12"></path></svg>
+    </button>
+
+    <!-- 封面 + 歌名 + 歌手 -->
+    <div class="music-now">
+      <div class="music-cover">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v12"></path><circle cx="6.5" cy="18" r="2.5"></circle><circle cx="16.5" cy="16" r="2.5"></circle></svg>
+        <img id="music-cover" alt="">
+      </div>
+      <div class="music-info">
+        <div class="music-title" id="music-title">还没有开始播放</div>
+        <div class="music-artist" id="music-artist">点一下 ▶ 开始</div>
+      </div>
+    </div>
+
+    <!-- 歌词：上面一行是原文，下面一行（如果有）是翻译 -->
+    <div class="music-lyric"><div id="music-lyric"></div><div class="tl" id="music-tlyric"></div></div>
+
+    <!-- 进度条（点一下可以跳到那个位置）和时间 -->
+    <div class="music-bar" id="music-bar"><div class="music-fill" id="music-fill"></div></div>
+    <div class="music-times"><span id="music-cur">00:00</span><span id="music-dur">00:00</span></div>
+
+    <!-- 控制：播放模式 / 上一首 / 播放暂停 / 下一首 -->
+    <div class="music-ctrl">
+      <button type="button" class="mbtn mode" id="music-mode" title="切换播放模式">列表循环</button>
+      <button type="button" class="mbtn" id="music-prev" aria-label="上一首">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6v12M19 6L9.5 12 19 18z"></path></svg>
+      </button>
+      <button type="button" class="mbtn big" id="music-play" aria-label="播放或暂停">
+        <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"></path></svg>
+        <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5.5v13M15.5 5.5v13" stroke-width="3.4"></path></svg>
+      </button>
+      <button type="button" class="mbtn" id="music-next" aria-label="下一首">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6v12M5 6l9.5 6L5 18z"></path></svg>
+      </button>
+    </div>
+
+    <!-- 歌曲列表：点哪首就播哪首 -->
+    <div class="music-list" id="music-list"></div>
+  </div>
+
   <!-- 屏幕正上方的提示条：专注时间到了会在这里提示（点一下可以关掉） -->
   <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
 
@@ -1276,6 +1493,30 @@
     { name: "SLS",          url: "https://vle.learning.moe.edu.sg",         icon: "sls.png" },
     { name: "Google 课堂",  url: "https://classroom.google.com",            icon: "classroom.png" },
   ];
+
+  /* ============================================================
+     【改这里】音乐播放器的歌曲号码（网易云音乐）
+     怎么找歌曲号码：在电脑浏览器里打开网易云音乐网页版（music.163.com），点进一首歌，
+     看浏览器地址栏，网址里 "id=" 后面那一串数字就是歌曲号码。
+       例：https://music.163.com/#/song?id=536622304   →   536622304
+     每一行写一个号码，后面加逗号；想加歌就多写一行，想删歌就删掉那一行。
+     播放顺序就是这里的顺序。下面这个 536622304 只是示例，请换成你自己的歌。
+     ============================================================ */
+  const SONG_IDS = [
+    3418880644,   // 示例（来自播放器项目的示例，换成你自己的）
+    1984537504,
+    27538415,
+    27571001,
+    2730593493,
+    1980701213,
+    22817150,
+    // 123456789,   // ← 前面的 // 去掉，就变成第二首歌
+  ];
+
+  // 取歌的服务器地址。这是开源项目作者自己架的一台服务器（不是网易云官方的）：
+  // 它挂了，音乐就放不了；它也能看到你请求了哪些歌。
+  // 以后如果你有自己的服务器，把这里换成你的地址就行。
+  const MUSIC_API = "https://nmapi.dontpanic.fun";
 
   /* ---------- A. 工具：生成"首字母渐变图标"（图片没传或加载失败时用） ---------- */
   function letterIcon(box, name) {
@@ -1374,6 +1615,9 @@
      逻辑：同一天内先用缓存（所以是"每日"金句）；点击句子可以手动换一句。
      接口会返回一个对象：hitokoto = 句子，from = 出处，from_who = 作者。
      想限定类型，可以把网址改成 https://v1.hitokoto.cn/?c=d&c=i （d=文学 i=诗词，更多类型见官网文档） */
+  // 【改这里】句子最长多少个字。接口自己会按这个长度挑句子；
+  // 万一还是超出，页面上也最多显示 3 行（见 CSS），模块的大小不会变。
+  const QUOTE_MAX = 40;
   const quoteBox  = document.getElementById("quote");
   const quoteText = document.getElementById("quote-text");
   const quoteFrom = document.getElementById("quote-from");
@@ -1395,11 +1639,15 @@
     if (!forceNew) {
       try {
         const saved = localStorage.getItem(todayKey());
-        if (saved) { showQuote(JSON.parse(saved)); return; }
+        if (saved) {
+          const d = JSON.parse(saved);
+          // 以前缓存下来的句子如果太长（超过 QUOTE_MAX 个字），就不用它，重新取一句短的
+          if (d.hitokoto && d.hitokoto.length <= QUOTE_MAX) { showQuote(d); return; }
+        }
       } catch (e) { /* 读缓存失败就忽略，继续联网取 */ }
     }
     try {
-      const res = await fetch("https://v1.hitokoto.cn/");
+      const res = await fetch("https://v1.hitokoto.cn/?max_length=" + QUOTE_MAX);
       const data = await res.json();
       showQuote(data);
       try { localStorage.setItem(todayKey(), JSON.stringify(data)); } catch (e) {}
@@ -1510,6 +1758,21 @@
   const csecEl = document.getElementById("csec");
   const cdateEl = document.getElementById("cdate");
 
+  // 欢迎语：按当前小时换问候词。
+  const USER_NAME = "海参";   // 【改这里】显示在问候语后面的名字
+  /* GREET-START */
+  // 时间段：0–4 点 夜深了 / 5–11 点 早上好 / 12–13 点 中午好 / 14–17 点 下午好 / 18–23 点 晚上好
+  // 想改分界，改下面的数字就行（h 是"现在几点"，0~23）
+  function greetingFor(h) {
+    if (h < 5)  return "夜深了";
+    if (h < 12) return "早上好";
+    if (h < 14) return "中午好";
+    if (h < 18) return "下午好";
+    return "晚上好";
+  }
+  /* GREET-END */
+  const greetingEl = document.getElementById("greeting");
+
   const pad = (n) => String(n).padStart(2, "0");   // 5 → "05"
   const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -1552,6 +1815,10 @@
     weekdayEl.textContent = "星期" + WEEK[now.getDay()];
     fulldateEl.textContent = now.getFullYear() + "年" + (now.getMonth() + 1) + "月" + now.getDate() + "日";
 
+    // 问候语：只有文字真的变了才去改（每秒都会走到这里）
+    const greetText = greetingFor(now.getHours()) + "，" + USER_NAME;
+    if (greetingEl.textContent !== greetText) greetingEl.textContent = greetText;
+
     // 同步给清爽模式的时钟
     chmEl.textContent = hmEl.textContent;
     csecEl.textContent = secEl.textContent;
@@ -1578,16 +1845,69 @@
     });
   });
 
-  /* ---------- F. 键盘：按 "/" 直接跳到搜索框，Esc 退出 ---------- */
+  /* ---------- F. 搜索栏 ----------
+     搜索栏平时是藏起来的（CSS 里 opacity:0），三种情况下才出现：
+       ① 鼠标移到屏幕底部   ② 按 "/" 键   ③ 里面已经有文字
+     点进搜索框（或按 / 键）的那一刻，整个屏幕就会被模糊层盖住，只有搜索栏保持清晰，不需要等你打字。
+     收起搜索栏：按 Esc，或点一下模糊的区域（会同时清空里面的文字）。 */
+  /* SEARCH-START */
   const q = document.getElementById("q");
-  document.addEventListener("keydown", (e) => {
-    // 只有当你"不在任何输入框里"时，按 / 才跳到搜索框（不然在日程里打"/"会被抢走）
-    // （清爽模式下搜索栏是隐藏的，所以这时按 / 不处理）
-    if (e.key === "/" && document.activeElement.tagName !== "INPUT" && !document.body.classList.contains("clean") && !document.body.classList.contains("fold-open")) {
-      e.preventDefault(); q.focus();
-    }
-    if (e.key === "Escape") q.blur();
+  const searchBar = document.getElementById("searchbar");
+  const searchVeil = document.getElementById("search-veil");
+  let searchNear = false;       // 鼠标现在是不是在"屏幕底部"这个区域里
+
+  function setSearchNear(on) {
+    if (on === searchNear) return;
+    searchNear = on;
+    searchBar.classList.toggle("near", on);      // CSS 看到 .near 就把搜索栏显示出来
+  }
+
+  // 鼠标位置判断：离屏幕底边 70px 以内就算"到了底部"；
+  // 一旦出现，范围会放大到 170px（这样鼠标从底边往上移去点搜索栏时，它不会又缩回去）
+  document.addEventListener("mousemove", (e) => {
+    if (document.body.classList.contains("fold-open")) { setSearchNear(false); return; }   // 文件夹展开时不出现
+    if (document.querySelector(".win.dragging, .win.gliding")) return;                      // 拖动窗口时不触发
+    setSearchNear(e.clientY > window.innerHeight - (searchNear ? 170 : 70));
   });
+  // 鼠标离开浏览器窗口时，也把它收起来
+  document.documentElement.addEventListener("mouseleave", () => setSearchNear(false));
+
+  // 同步搜索栏的状态：
+  //   search-active（加在 <body> 上）= 输入框获得了焦点（点进去 / 按了 /）→ 模糊层出现
+  //   has-text（加在搜索栏上）        = 里面有字 → 搜索栏一直保持显示，直到清空
+  function syncSearch() {
+    document.body.classList.toggle("search-active", document.activeElement === q);
+    searchBar.classList.toggle("has-text", q.value !== "");
+  }
+  q.addEventListener("input", syncSearch);
+  q.addEventListener("focus", syncSearch);
+  q.addEventListener("blur", syncSearch);
+
+  // 收起：清空文字 + 失去焦点 → 模糊层消失，搜索栏也跟着藏起来
+  function closeSearch() {
+    q.value = "";
+    q.blur();
+    syncSearch();
+  }
+  // 点模糊的区域 = 收起。mousedown 要先拦住，否则输入框会先失焦、模糊层先消失，那一下点击就会落到后面的东西上
+  searchVeil.addEventListener("mousedown", (e) => e.preventDefault());
+  searchVeil.addEventListener("click", closeSearch);
+
+  document.addEventListener("keydown", (e) => {
+    // 按 "/" 唤出搜索栏。以下情况不处理：
+    //   你正在某个输入框里打字（不然在日程里打"/"会被抢走）、文件夹展开着、
+    //   计算器开着（这时 "/" 是除号）
+    if (e.key === "/" &&
+        document.activeElement.tagName !== "INPUT" &&
+        !document.body.classList.contains("fold-open") &&
+        !calcEl.classList.contains("open")) {
+      e.preventDefault();
+      q.focus();                                 // 一聚焦，CSS 的 :focus-within 就会让它显示出来
+    }
+    // Esc：搜索栏正在使用（或里面还有字）时，收起它
+    if (e.key === "Escape" && (document.activeElement === q || q.value !== "")) closeSearch();
+  });
+  /* SEARCH-END */
 
   /* ============================================================
      H. 清爽模式
@@ -2012,7 +2332,7 @@
   const calcKeys = document.getElementById("calc-keys");
 
   /* CALC-LOGIC-START */
-  const calc = { cur: "0", acc: null, op: null, entered: false, fresh: true, err: false };
+  const calc = { cur: "0", acc: null, op: null, entered: false, fresh: true, err: false, fx: null };   // fx：这次按键之后要播放动画的算式文字（没有就是 null）
   const OPS = { "+": (a, b) => a + b, "-": (a, b) => a - b, "*": (a, b) => a * b, "/": (a, b) => a / b };
   const OP_SHOW = { "+": "+", "-": "−", "*": "×", "/": "÷" };   // 算式行里显示的符号
 
@@ -2027,7 +2347,7 @@
 
   function calcClear() {
     calc.cur = "0"; calc.acc = null; calc.op = null;
-    calc.entered = false; calc.fresh = true; calc.err = false;
+    calc.entered = false; calc.fresh = true; calc.err = false; calc.fx = null;
     calcExpr.textContent = "";
   }
   function calcError(msg) {        // 出错：清空一切，屏幕上显示错误信息；下次按任何键会自动清掉
@@ -2080,6 +2400,7 @@
     const r = calcApply(calc.acc, calc.op, b);
     if (r.err) return calcError(r.err);
     calcExpr.textContent = fmtNum(calc.acc) + " " + OP_SHOW[calc.op] + " " + fmtNum(b) + " =";
+    calc.fx = calcExpr.textContent;          // 等号：这行算式要"飞"到上面去
     calc.cur = fmtNum(r.v);
     calc.acc = null; calc.op = null;
     calc.entered = false; calc.fresh = true;
@@ -2102,6 +2423,7 @@
     calc.entered = true;
     calc.fresh = true;
     calcExpr.textContent = (calc.op !== null ? fmtNum(calc.acc) + " " + OP_SHOW[calc.op] + " " : "") + label;
+    calc.fx = calcExpr.textContent;          // 开根号 / 平方：同样播放动画
   }
 
   // 正负号 ±：
@@ -2141,6 +2463,7 @@
 
   // 所有按键（鼠标点和键盘按）最终都走这里，k 就是按键的"身份"
   function calcPress(k) {
+    calc.fx = null;                                                // 先清掉上一次的动画标记
     if (calc.err) calcClear();                                     // 上一次出错了：先清干净
     if (/^[0-9]$/.test(k)) calcDigit(k);
     else if (k === ".") calcDot();
@@ -2154,10 +2477,84 @@
   }
   /* CALC-LOGIC-END */
 
+  /* CALC-ANIM-START */
+  /* ----- 计算动画 -----
+     按下 = 或 √ / x² 时：
+       ① 原来的算式（比如 "36 + 4 ="）先以大字出现在结果的位置；
+       ② 它一边缩小、一边飞到上面的算式行里（用的是 transform，所以很顺）；
+       ③ 与此同时，结果从下方轻轻放大、渐渐显现出来。
+     实现方式：临时造一个"飞行的算式"（.calc-ghost），用浏览器自带的 element.animate() 播放。
+     动画期间真正的算式行先清空，飞到位之后再把文字填回去，所以不会出现两份。
+     如果动画还没播完你又按了别的键：立刻停掉动画、把算式行还原，再处理新的按键。 */
+  const calcScreen = calcOut.parentElement;      // .calc-screen（屏幕那个黑色框）
+  const CALC_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
+  let calcAnim = null;                           // 正在播放的动画：{ ghost, anims, formula }
+
+  function calcStopAnim() {
+    if (!calcAnim) return;
+    calcAnim.anims.forEach((a) => a.cancel());
+    calcAnim.ghost.remove();
+    calcExpr.textContent = calcAnim.formula;     // 还原算式行，让接下来的逻辑看到正常状态
+    calcAnim = null;
+  }
+
+  function playCalcAnim(formula) {
+    // 系统开了"减少动画"，或者浏览器不支持 animate：直接跳过（算式行里已经有正确的文字）
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !calcOut.animate) return;
+
+    calcExpr.textContent = "";                   // 先清空算式行，等"飞行的算式"落下来再填
+    const ghost = document.createElement("div");
+    ghost.className = "calc-ghost";
+    ghost.textContent = formula;
+    calcScreen.appendChild(ghost);
+
+    // 量尺寸：算出起点（和结果同样大、同样的位置）、终点（算式行的位置和字号）
+    const avail = calcScreen.clientWidth - 28;   // 屏幕左右各有 14px 内边距，可用宽度
+    const gw = ghost.offsetWidth, gh = ghost.offsetHeight;
+    const startScale = Math.min(1, avail / gw);  // 算式太长放不下时，起点就先缩小一点
+    const fontRatio = parseFloat(getComputedStyle(calcExpr).fontSize) / parseFloat(getComputedStyle(ghost).fontSize);
+    const endScale = Math.min(fontRatio, avail / gw);
+    const top = calcOut.offsetTop + calcOut.offsetHeight / 2 - gh / 2;   // 让它和结果上下居中对齐
+    ghost.style.top = top + "px";
+    const dy = (calcExpr.offsetTop + calcExpr.offsetHeight / 2) - (top + gh / 2);   // 要往上飞多远
+
+    const flyAnim = ghost.animate([
+      { transform: "translateY(0px) scale(" + startScale + ")", color: "rgba(244,244,246,1)" },
+      { transform: "translateY(" + dy + "px) scale(" + endScale + ")", color: "rgba(244,244,246,0.62)" },   // 终点颜色 = 算式行的颜色
+    ], { duration: 560, easing: CALC_EASE, fill: "forwards" });
+
+    // 结果：稍等 160 毫秒（让算式先动起来），再从下方、小一点、模糊的状态渐渐变清晰
+    const resultAnim = calcOut.animate([
+      { opacity: 0, transform: "translateY(12px) scale(0.82)", filter: "blur(4px)" },
+      { opacity: 1, transform: "translateY(0) scale(1)", filter: "blur(0)" },
+    ], { duration: 520, delay: 160, easing: CALC_EASE, fill: "backwards" });
+
+    calcAnim = { ghost: ghost, anims: [flyAnim, resultAnim], formula: formula };
+    flyAnim.onfinish = () => {
+      if (!calcAnim || calcAnim.ghost !== ghost) return;   // 已经被新的按键打断了
+      ghost.remove();
+      calcExpr.textContent = formula;
+      calcAnim = null;
+    };
+  }
+
+  // 所有按键的统一入口：先停掉没播完的动画 → 处理按键 → 如果这次按键需要动画就播放
+  function calcHandle(k) {
+    calcStopAnim();
+    calcPress(k);
+    if (calc.fx) {
+      const f = calc.fx;
+      calc.fx = null;
+      playCalcAnim(f);
+    }
+  }
+  /* CALC-ANIM-END */
+
   // 鼠标点按键：用"事件委托"，只在外面的 calc-keys 上听一次，靠 data-k 判断点的是哪个
   calcKeys.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-k]");
-    if (btn) calcPress(btn.dataset.k);
+    if (btn) calcHandle(btn.dataset.k);
   });
 
   // 键盘也能用：数字、小数点、+ - * /、Enter（或 =）、Backspace、Delete（清零）
@@ -2177,7 +2574,7 @@
     else if (e.key === "Delete") k = "ac";
     if (k === null) return;
     e.preventDefault();               // 同时阻止按钮自己被"回车触发点击"，避免算两次
-    calcPress(k);
+    calcHandle(k);
   });
 
   // 打开 / 关闭
@@ -2394,6 +2791,322 @@
   wxSkeleton();
   loadWeather(false);
   setInterval(() => loadWeather(false), 10 * 60 * 1000);   // 每 10 分钟检查一次（缓存没过期就不会真的联网）
+
+  /* ============================================================
+     N. 音乐播放器（网易云音乐）
+     流程：点播放 → 向服务器要这首歌的"播放地址 / 详情 / 歌词" → 用浏览器自带的 Audio 播放
+           → 放完自动按模式切到下一首（列表循环 / 单曲循环 / 随机）。
+     歌曲号码和服务器地址在上面的 SONG_IDS / MUSIC_API。
+
+     这部分的取歌思路和歌词解析改自开源项目 embedded-netease-music-player：
+       Copyright 2020 Shengqiu Li
+       https://github.com/dontpanic92/embedded-netease-music-player
+       Licensed under the MIT license.
+     和原项目不同的地方：
+       - 原项目一次只能放一首、单曲循环；这里改成了歌曲列表；
+       - 每首歌开始播放的那一刻才去要播放地址（地址大约 20 分钟就会过期，不能提前要）；
+       - 页面上的文字都用 textContent 写入，服务器返回什么都不会被当成代码执行；
+       - 图片和音频地址如果是 http 开头，会改成 https（不然 https 页面里会被浏览器拦掉）；
+       - 没有带原项目里"伪造国内 IP"的参数，所以有区域限制的歌会放不了。
+     ============================================================ */
+  /* MUSIC-PURE-START */
+  // 秒数 → "03:25"
+  const mmss = (sec) => {
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    return pad(Math.floor(sec / 60)) + ":" + pad(Math.floor(sec % 60));
+  };
+
+  // http → https
+  const toHttps = (u) => (u ? String(u).replace(/^http:\/\//i, "https://") : "");
+
+  // 解析 LRC 歌词。一行长这样："[01:23.45]歌词内容"（有时一行有好几个时间标记）
+  // 返回按时间从早到晚排好的数组：[{ seconds: 83.45, text: "歌词内容" }, ...]
+  function parseLyrics(text) {
+    const out = [];
+    if (!text) return out;
+    text.split("\n").forEach((line) => {
+      const tags = line.match(/\[\d+:\d+(?:\.\d+)?\]/g);          // 这一行里所有的时间标记
+      if (!tags) return;                                          // 没有时间标记的行（比如歌手信息）跳过
+      const content = line.replace(/\[[^\]]*\]/g, "").trim();     // 去掉所有 [...] 剩下的就是歌词
+      tags.forEach((tag) => {
+        const m = /\[(\d+):(\d+(?:\.\d+)?)\]/.exec(tag);
+        out.push({ seconds: parseInt(m[1], 10) * 60 + parseFloat(m[2]), text: content });
+      });
+    });
+    out.sort((a, b) => a.seconds - b.seconds);
+    return out;
+  }
+
+  // 播放到第 t 秒时，应该显示哪一句：找到"时间 ≤ t"的最后一句
+  function lyricAt(lines, t) {
+    let cur = "";
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].seconds <= t) cur = lines[i].text; else break;
+    }
+    return cur;
+  }
+
+  // 下一首是第几首。i 现在第几首，n 一共几首，dir 方向（1 下一首 / -1 上一首），
+  // auto 是不是"放完了自动切"（true）还是"你手动点的"（false），rnd 随机数函数
+  //   列表循环：按顺序，最后一首接第一首
+  //   单曲循环：自动切时还是这一首；你手动点下一首/上一首时，照常换歌
+  //   随机播放：从"除了当前这首"里随机挑一首
+  function nextIndex(mode, i, n, dir, auto, rnd) {
+    if (n <= 1) return 0;
+    if (mode === "one" && auto) return i;
+    if (mode === "shuffle") {
+      const j = Math.floor(rnd() * (n - 1));
+      return j >= i ? j + 1 : j;
+    }
+    return (i + dir + n) % n;
+  }
+  /* MUSIC-PURE-END */
+
+  const musicEl    = document.getElementById("music");
+  const musicBtn   = document.getElementById("music-btn");
+  const mCoverEl   = document.getElementById("music-cover");
+  const mTitleEl   = document.getElementById("music-title");
+  const mArtistEl  = document.getElementById("music-artist");
+  const mLyricEl   = document.getElementById("music-lyric");
+  const mTLyricEl  = document.getElementById("music-tlyric");
+  const mBarEl     = document.getElementById("music-bar");
+  const mFillEl    = document.getElementById("music-fill");
+  const mCurEl     = document.getElementById("music-cur");
+  const mDurEl     = document.getElementById("music-dur");
+  const mModeBtn   = document.getElementById("music-mode");
+  const mPrevBtn   = document.getElementById("music-prev");
+  const mPlayBtn   = document.getElementById("music-play");
+  const mNextBtn   = document.getElementById("music-next");
+  const mListEl    = document.getElementById("music-list");
+
+  const MODES = [
+    { key: "list",    label: "列表循环" },
+    { key: "one",     label: "单曲循环" },
+    { key: "shuffle", label: "随机播放" },
+  ];
+  let mModeIdx = 0;
+  const mAudio = new Audio();      // 真正放声音的东西。不放进页面也能播，所以关掉窗口音乐也不会停
+  const mDetails = {};             // 歌曲号码 → { name, artist, pic }，拿到之后缓存在这里
+  let mIndex = -1;                 // 现在是列表里的第几首（-1 = 还没开始）
+  let mToken = 0;                  // 每次换歌 +1。网络回来时对一下号，不是最新的就丢掉，避免"后点的歌被先点的盖掉"
+  let mFails = 0;                  // 连续放不了几首了
+  let mFailTimer = 0;
+  let mLines = [], mTLines = [];   // 当前这首的歌词（原文 / 翻译）
+  let mListRendered = false;
+  let mDetailsLoaded = false;
+
+  // 向服务器要数据（返回 JSON）
+  async function musicGet(path) {
+    const res = await fetch(MUSIC_API + path);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
+  }
+
+  function mAuthors(song) { return (song.ar || []).map((a) => a.name).join(" / "); }
+
+  // 显示歌名 / 歌手；同时告诉系统（Chromebook 的媒体键、通知栏）现在放的是什么
+  function showInfo(title, artist) {
+    mTitleEl.textContent = title;
+    mArtistEl.textContent = artist;
+    if (typeof navigator !== "undefined" && navigator.mediaSession && typeof MediaMetadata !== "undefined") {
+      try { navigator.mediaSession.metadata = new MediaMetadata({ title: title, artist: artist }); } catch (e) {}
+    }
+  }
+  function setCover(url) {
+    if (!url) { mCoverEl.style.display = "none"; return; }
+    mCoverEl.onload = () => { mCoverEl.style.display = "block"; };
+    mCoverEl.onerror = () => { mCoverEl.style.display = "none"; };
+    mCoverEl.src = toHttps(url) + "?param=160y160";     // 让网易云的图片服务器直接给小图，省流量
+  }
+
+  // 歌曲列表：每首一行，点哪首播哪首；现在这首高亮
+  function renderList() {
+    mListEl.textContent = "";
+    if (!SONG_IDS.length) {
+      const tip = document.createElement("div");
+      tip.className = "music-empty";
+      tip.textContent = "还没有歌。请在代码里的 SONG_IDS 填上歌曲号码。";
+      mListEl.appendChild(tip);
+      return;
+    }
+    SONG_IDS.forEach((id, i) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "music-row" + (i === mIndex ? " current" : "");
+      row.dataset.i = String(i);
+      const d = mDetails[String(id)];
+      row.textContent = (i + 1) + ". " + (d ? d.name + (d.artist ? " · " + d.artist : "") : "歌曲 " + id);
+      mListEl.appendChild(row);
+    });
+  }
+  function markCurrent() {
+    Array.prototype.forEach.call(mListEl.children, (row, i) => {
+      row.classList.toggle("current", i === mIndex);
+      if (i === mIndex && row.scrollIntoView) row.scrollIntoView({ block: "nearest" });
+    });
+  }
+  mListEl.addEventListener("click", (e) => {
+    const row = e.target.closest(".music-row");
+    if (row) playTrack(Number(row.dataset.i));
+  });
+
+  // 第一次打开窗口时，一次性把整个列表的歌名要回来（不用每首歌单独要）
+  async function loadListDetails() {
+    if (mDetailsLoaded || !SONG_IDS.length) return;
+    mDetailsLoaded = true;
+    try {
+      const data = await musicGet("/song/detail?ids=" + SONG_IDS.join(","));
+      (data.songs || []).forEach((s) => {
+        mDetails[String(s.id)] = { name: s.name, artist: mAuthors(s), pic: s.al && s.al.picUrl };
+      });
+    } catch (e) {
+      mDetailsLoaded = false;          // 失败了，下次打开窗口再试
+    }
+    renderList();
+  }
+
+  // 放不了：显示原因，过 1.5 秒自动跳到下一首；如果整个列表连着都放不了，就停下来，不要无限循环
+  function trackFailed(token, msg) {
+    if (token !== mToken) return;
+    mFails++;
+    mArtistEl.textContent = msg;
+    if (mFails >= SONG_IDS.length) {
+      mFails = 0;
+      mArtistEl.textContent = "列表里的歌暂时都放不了";
+      return;
+    }
+    mFailTimer = setTimeout(() => { if (token === mToken) playTrack(mIndex + 1); }, 1500);
+  }
+
+  // 播放列表里的第 i 首
+  async function playTrack(i) {
+    if (!SONG_IDS.length) return;
+    clearTimeout(mFailTimer);
+    mIndex = ((i % SONG_IDS.length) + SONG_IDS.length) % SONG_IDS.length;
+    const id = String(SONG_IDS[mIndex]);
+    const token = ++mToken;
+    mAudio.pause();
+    mLyricEl.textContent = ""; mTLyricEl.textContent = "";
+    mFillEl.style.width = "0%"; mCurEl.textContent = "00:00"; mDurEl.textContent = "00:00";
+    const known = mDetails[id];
+    showInfo(known ? known.name : "加载中…", known ? known.artist : "");
+    setCover(known && known.pic);
+    markCurrent();
+
+    // 播放地址、详情、歌词三个请求同时发。地址是必须的；详情和歌词失败了也不影响播放
+    const [u, d, l] = await Promise.allSettled([
+      musicGet("/song/url?id=" + id),
+      musicGet("/song/detail?ids=" + id),
+      musicGet("/lyric?id=" + id),
+    ]);
+    if (token !== mToken) return;                       // 等的这段时间里你已经点了别的歌
+
+    if (d.status === "fulfilled" && d.value && d.value.songs && d.value.songs[0]) {
+      const s = d.value.songs[0];
+      mDetails[id] = { name: s.name, artist: mAuthors(s), pic: s.al && s.al.picUrl };
+      showInfo(s.name, mAuthors(s));
+      setCover(s.al && s.al.picUrl);
+    }
+    mLines = []; mTLines = [];
+    if (l.status === "fulfilled" && l.value) {
+      mLines = parseLyrics(l.value.lrc && l.value.lrc.lyric);
+      mTLines = parseLyrics(l.value.tlyric && l.value.tlyric.lyric);
+    }
+    const song = u.status === "fulfilled" && u.value && u.value.data && u.value.data[0];
+    if (!song || !song.url) {
+      return trackFailed(token, u.status === "rejected" ? "音乐服务暂时连不上" : "这首暂时放不了（可能有区域或会员限制）");
+    }
+    if (song.freeTrialInfo) mArtistEl.textContent += "（仅试听片段）";
+
+    mAudio.src = toHttps(song.url);
+    try {
+      await mAudio.play();
+    } catch (err) {
+      if (token !== mToken) return;
+      if (err && err.name === "NotAllowedError") mArtistEl.textContent = "点一下 ▶ 开始播放";   // 浏览器拦了自动播放
+      else if (err && err.name !== "AbortError") trackFailed(token, "这首加载失败");
+    }
+  }
+
+  // ----- 播放器自己的事件 -----
+  function syncPlayState() {
+    const playing = !mAudio.paused;
+    mPlayBtn.classList.toggle("on", playing);
+    musicBtn.classList.toggle("playing", playing);      // 侧边栏的按钮会"呼吸"
+    if (typeof navigator !== "undefined" && navigator.mediaSession) navigator.mediaSession.playbackState = playing ? "playing" : "paused";
+  }
+  mAudio.addEventListener("play", syncPlayState);
+  mAudio.addEventListener("pause", syncPlayState);
+  mAudio.addEventListener("playing", () => { mFails = 0; });      // 真的放出声音了，失败计数清零
+  mAudio.addEventListener("timeupdate", () => {
+    const t = mAudio.currentTime, dur = mAudio.duration;
+    mCurEl.textContent = mmss(t);
+    mDurEl.textContent = mmss(dur);
+    mFillEl.style.width = (isFinite(dur) && dur > 0 ? (t / dur) * 100 : 0) + "%";
+    const l1 = lyricAt(mLines, t), l2 = lyricAt(mTLines, t);
+    if (mLyricEl.textContent !== l1) mLyricEl.textContent = l1;
+    if (mTLyricEl.textContent !== l2) mTLyricEl.textContent = l2;
+  });
+  mAudio.addEventListener("ended", () => {
+    const n = nextIndex(MODES[mModeIdx].key, mIndex, SONG_IDS.length, 1, true, Math.random);
+    if (n === mIndex) { mAudio.currentTime = 0; mAudio.play().catch(() => {}); }   // 单曲循环：直接从头再放
+    else playTrack(n);
+  });
+  mAudio.addEventListener("error", () => {
+    if (mAudio.getAttribute("src")) trackFailed(mToken, "这首加载失败");
+  });
+
+  // ----- 按钮 -----
+  const mStartIndex = () => (MODES[mModeIdx].key === "shuffle" ? Math.floor(Math.random() * SONG_IDS.length) : 0);
+  mPlayBtn.addEventListener("click", () => {
+    if (!mAudio.getAttribute("src")) { playTrack(mIndex === -1 ? mStartIndex() : mIndex); return; }   // 还没开始，或者上一首没放成功
+    if (mAudio.paused) mAudio.play().catch(() => {}); else mAudio.pause();
+  });
+  mPrevBtn.addEventListener("click", () => {
+    playTrack(mIndex === -1 ? mStartIndex() : nextIndex(MODES[mModeIdx].key, mIndex, SONG_IDS.length, -1, false, Math.random));
+  });
+  mNextBtn.addEventListener("click", () => {
+    playTrack(mIndex === -1 ? mStartIndex() : nextIndex(MODES[mModeIdx].key, mIndex, SONG_IDS.length, 1, false, Math.random));
+  });
+  mModeBtn.addEventListener("click", () => {
+    mModeIdx = (mModeIdx + 1) % MODES.length;
+    mModeBtn.textContent = MODES[mModeIdx].label;
+  });
+  // 点进度条：跳到对应位置
+  mBarEl.addEventListener("click", (e) => {
+    const dur = mAudio.duration;
+    if (!isFinite(dur) || dur <= 0) return;
+    const r = mBarEl.getBoundingClientRect();
+    mAudio.currentTime = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1) * dur;
+  });
+  // Chromebook 键盘上的媒体键（播放/暂停、上一首、下一首）
+  if (typeof navigator !== "undefined" && navigator.mediaSession) {
+    try {
+      navigator.mediaSession.setActionHandler("play", () => mPlayBtn.click());
+      navigator.mediaSession.setActionHandler("pause", () => mPlayBtn.click());
+      navigator.mediaSession.setActionHandler("previoustrack", () => mPrevBtn.click());
+      navigator.mediaSession.setActionHandler("nexttrack", () => mNextBtn.click());
+    } catch (e) {}
+  }
+
+  // ----- 窗口的打开 / 关闭 / 拖动 -----
+  function openMusic() {
+    musicEl.classList.add("open");
+    if (!mListRendered) { mListRendered = true; renderList(); }
+    loadListDetails();
+  }
+  function closeMusic() {
+    if (!musicEl.classList.contains("open")) return;
+    aimAt(musicEl, musicBtn);                // 朝侧边栏的音符按钮收进去（音乐不会停）
+    musicEl.classList.remove("open");
+  }
+  musicBtn.addEventListener("click", () => {
+    musicEl.classList.contains("open") ? closeMusic() : openMusic();
+  });
+  document.getElementById("music-close").addEventListener("click", closeMusic);
+  // 在窗口空白处按住可以拖；点按钮、进度条、歌曲列表时不触发拖动
+  const musicDrag = makeDraggable(musicEl, musicEl, "button, .music-bar, .music-list");
+  window.addEventListener("resize", () => musicDrag.clamp());
 
   /* ---------- G. 入场动画 ---------- */
   // 等页面画好后给 body 加 "ready"，CSS 里的入场动画就开始播放

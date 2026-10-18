@@ -505,13 +505,23 @@
      JS 给 <body> 加上 class="clean" 就进入清爽模式。
      下面所有 body.clean 开头的规则，都是"清爽模式下才生效"。 */
 
-  /* 所有模块：淡出。visibility 要等淡出播完（0.6s）才隐藏，所以能看到淡出动画 */
-  .page { transition: opacity 0.6s var(--ease), visibility 0s; }
-  body.clean .page {
+  /* 所有模块：淡出（进入清爽模式）/ 淡入（回到启动界面）。
+     【重要】淡入淡出是作用在"每个模块自己"身上的，而不是整个 .page 容器。
+     原因：浏览器有一条规定——只要一个元素处于半透明状态（opacity 小于 1），
+     它里面的磨砂玻璃（backdrop-filter）就看不到它后面的画面，磨砂会暂时失效，
+     要等这个元素完全不透明了才突然出现。
+     如果让整个 .page 淡入，所有模块的磨砂就都得等淡入播完才出现（之前的 bug 就是这样）。
+     现在每个模块各自淡入，它们自己的磨砂从第一帧起就是有效的。
+     visibility 要等淡出播完（0.6s）才隐藏，所以能看到淡出动画。
+     （:not(.reveal)：页面刚打开时的入场动画用的是 .reveal，不去干扰它） */
+  .page > :not(.reveal) {
+    transition: opacity 0.6s var(--ease), visibility 0s, transform 0.45s var(--ease);   /* transform 是网站文件夹悬停上浮用的 */
+  }
+  body.clean .page > * {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.6s var(--ease), visibility 0s 0.6s;
+    transition: opacity 0.6s var(--ease), visibility 0s 0.6s, transform 0.45s var(--ease);
   }
   body.clean { overflow: hidden; }   /* 清爽模式下锁住滚动，退出后回到原来的位置 */
 
@@ -598,11 +608,12 @@
   .cbtn[aria-pressed="true"] { background: #fff; color: #0c0c10; }   /* C 按钮：清爽模式开着时变成白色实心 */
   .cbtn[aria-pressed="true"]:hover { background: #fff; }
 
-  /* 音乐、番茄时钟、计算器按钮：只在清爽模式下才出现。
+  /* 音乐、番茄时钟、计算器、桌宠按钮：只在清爽模式下才出现。
      不是直接 display:none，而是把高度收成 0，这样进入清爽模式时侧边栏会平滑地"长出"一个按钮 */
   body:not(.clean) #music-btn,
   body:not(.clean) #pomo-btn,
-  body:not(.clean) #calc-btn {
+  body:not(.clean) #calc-btn,
+  body:not(.clean) #pet-btn {
     height: 0;
     margin-top: -8px;               /* 抵消掉它和上一个按钮之间的 8px 间距 */
     opacity: 0;
@@ -652,7 +663,7 @@
   .win.dragging { cursor: grabbing; box-shadow: 0 28px 64px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.1); }
 
   /* 番茄时钟窗口的位置和大小（停在侧边栏的左边） */
-  .pomo { right: 92px; bottom: 28px; width: 264px; padding: 20px 22px 22px; }
+  .pomo { right: 220px; bottom: 28px; width: 264px; padding: 20px 22px 22px; }   /* 右边留出 200px 给桌宠 */
 
   .pomo-head { font-size: 14px; font-weight: 900; color: var(--text-soft); margin-bottom: 14px; }
   .pomo-close {
@@ -814,7 +825,7 @@
   .pill:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
   /* ---------- 9.10 计算器（清爽模式侧边栏里的第三个按钮） ---------- */
-  .calc { right: 372px; bottom: 28px; width: 276px; padding: 20px; }   /* 停在番茄钟窗口的左边，两个都开也不重叠 */
+  .calc { left: 28px; bottom: 28px; width: 276px; padding: 20px; transform-origin: 0% 100%; }   /* 停在屏幕左下角，和停在右边的窗口互不遮挡 */
   .calc-screen {
     position: relative;              /* 给"飞行的算式"当定位基准 */
     overflow: hidden;                /* 飞行时超出屏幕的部分不显示 */
@@ -1138,6 +1149,71 @@
     50% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.22); }
   }
 
+  /* ---------- 9.16 桌宠 ----------
+     平时收在清爽模式侧边栏的按钮里；点按钮才出现在屏幕右下角，再点一次收回去。
+     没有窗口外壳、没有背景，也没有关闭按钮：想收起它，只能再点侧边栏里的那个按钮。
+     层级 130：比所有悬浮窗口（从 120 开始往上排）都高，所以永远不会被窗口盖住；
+     又比"搜索时的整屏模糊层"（135）低，所以搜索时它也会跟着一起被模糊。 */
+  .pet {
+    position: fixed;
+    right: 0;                        /* 紧贴屏幕右下角：图片的右边和下边本来就是"被画面裁掉"的，贴着屏幕边缘刚好 */
+    bottom: 0;
+    z-index: 130;
+    width: 200px;
+    pointer-events: none;            /* 外框不接收鼠标；只有里面的图片（轮廓内）能被点到 */
+    transform-origin: 100% 100%;     /* 从右下角"弹"出来 / 缩回去 */
+    transform: scale(0);
+    opacity: 0;
+    visibility: hidden;
+    /* 收起：先快后慢地缩小；visibility 等动画播完才隐藏 */
+    transition: transform 0.35s cubic-bezier(0.5, 0, 0.75, 0), opacity 0.25s ease 0.1s, visibility 0s 0.35s;
+  }
+  .pet.open {
+    transform: scale(1);
+    opacity: 1;
+    visibility: visible;
+    /* 出现：用带"回弹"的曲线（数值大于 1 的那一项就是过冲），所以有 Q 弹感 */
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s, visibility 0s;
+  }
+  .pet-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    cursor: pointer;
+    pointer-events: auto;
+    user-select: none;
+    -webkit-user-drag: none;
+    transform-origin: 50% 100%;      /* 点击时的"压扁"以底边为准，脚（下边缘）不动，只有上半身在变形 */
+    /* 点击区域：只有角色的轮廓里面才算点到，透明的地方点不到，也不会挡住后面的东西。
+       （多边形是用抠好的图自动算出来的，顶点是百分比） */
+    clip-path: polygon(49.0% 0.0%, 39.6% 2.6%, 35.2% 5.2%, 31.9% 7.8%, 29.6% 10.4%, 35.8% 13.0%, 30.4% 15.6%, 26.2% 18.2%, 21.0% 20.9%, 16.9% 23.5%, 13.5% 26.1%, 10.4% 28.7%, 8.1% 31.3%, 5.8% 33.9%, 4.2% 36.5%, 2.9% 39.1%, 1.9% 41.7%, 1.7% 44.3%, 2.1% 46.9%, 3.3% 49.5%, 2.3% 52.1%, 1.5% 54.7%, 0.8% 57.4%, 1.0% 60.0%, 1.7% 62.6%, 3.8% 65.2%, 5.0% 67.8%, 4.4% 70.4%, 4.0% 73.0%, 3.8% 75.6%, 3.8% 78.2%, 4.2% 80.8%, 4.8% 83.4%, 5.0% 86.0%, 3.5% 88.6%, 2.1% 91.2%, 1.0% 93.9%, 0.4% 96.5%, 0.0% 99.1%, 0.0% 99.8%, 100.0% 99.8%, 100.0% 99.1%, 100.0% 96.5%, 100.0% 93.9%, 100.0% 91.2%, 100.0% 88.6%, 100.0% 86.0%, 100.0% 83.4%, 100.0% 80.8%, 100.0% 78.2%, 100.0% 75.6%, 100.0% 73.0%, 100.0% 70.4%, 100.0% 67.8%, 100.0% 65.2%, 100.0% 62.6%, 100.0% 60.0%, 100.0% 57.4%, 100.0% 54.7%, 100.0% 52.1%, 100.0% 49.5%, 100.0% 46.9%, 100.0% 44.3%, 100.0% 41.7%, 98.1% 39.1%, 100.0% 36.5%, 96.7% 33.9%, 97.5% 31.3%, 92.7% 28.7%, 91.7% 26.1%, 87.1% 23.5%, 84.6% 20.9%, 81.7% 18.2%, 77.9% 15.6%, 72.7% 13.0%, 63.1% 10.4%, 62.5% 7.8%, 61.3% 5.2%, 58.8% 2.6%, 52.3% 0.0%);
+  }
+  /* 偶尔冒出来的对话框：悬在头顶左上方，两个小圆圈一路指向头发。它不放在 .pet-img 里面，所以角色被压扁时它不会跟着变形 */
+  .pet-bubble {
+    position: absolute;
+    bottom: calc(100% + 26px);       /* 在宠物头顶上方；下面留出小圆圈的位置 */
+    right: 52%;
+    padding: 12px 24px;
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1.2;
+    white-space: nowrap;
+    color: #4a1f14;
+    background: #fff;
+    border: 4px solid #4a1f14;
+    border-radius: 50%;              /* 椭圆形 */
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+    opacity: 0;
+    scale: 0.5;
+    transform-origin: 85% 130%;      /* 从靠近头的那一边弹出来 */
+    transition: opacity 0.25s, scale 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .pet-bubble.show { opacity: 1; scale: 1; }
+  .pet-bubble i { position: absolute; background: #fff; border: 3px solid #4a1f14; border-radius: 50%; }
+  .pet-bubble .d1 { width: 16px; height: 16px; right: 18px; bottom: -22px; }
+  .pet-bubble .d2 { width: 10px; height: 10px; right: 6px; bottom: -34px; }
+
   /* ---------- 10. 入场动画（只做一次） ----------
      模块按顺序从下方浮现。--i 是顺序号（在 HTML 里写），越小越先出现。 */
   .reveal {
@@ -1307,7 +1383,7 @@
 
   <!-- ===== 右侧侧边栏（平时透明，鼠标靠近才滑出来） =====
        所有功能按钮都放在这里，从上到下排。最上面是 C（切换清爽模式，也可以直接按键盘 C），
-       下面依次是音乐、番茄时钟、计算器（这三个只在清爽模式下出现）。
+       下面依次是音乐、番茄时钟、计算器、桌宠（这四个只在清爽模式下出现）。
        【以后加新功能】在这里再写一个 <button type="button" class="cbtn spot" ...> 就行，
        侧边栏会自己变长。 -->
   <aside class="corner glass spot" id="corner" aria-label="功能侧边栏">
@@ -1327,6 +1403,13 @@
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="5" y="3" width="14" height="18" rx="2.5"></rect>
         <path d="M8.5 7.5h7M9 12h.01M12 12h.01M15 12h.01M9 16h.01M12 16h.01M15 16h.01"></path>
+      </svg>
+    <button type="button" class="cbtn spot" id="pet-btn" title="桌宠" aria-label="召唤或收起桌宠" aria-pressed="false">
+      <!-- 猫爪印图标：四个脚趾 + 一个大肉垫 -->
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="6.5" cy="11" r="1.8"></circle><circle cx="10" cy="6.5" r="1.8"></circle>
+        <circle cx="14" cy="6.5" r="1.8"></circle><circle cx="17.5" cy="11" r="1.8"></circle>
+        <path d="M12 12.5c-3 0-5 2.6-5 4.8 0 1.6 1.4 2.2 2.8 2 .9-.1 1.4-.4 2.2-.4s1.3.3 2.2.4c1.4.2 2.8-.4 2.8-2 0-2.2-2-4.8-5-4.8z"></path>
       </svg>
     </button>
   </aside>
@@ -1458,6 +1541,14 @@
     <div class="music-list" id="music-list"></div>
   </div>
 
+  <!-- ===== 桌宠（清爽模式下，通过侧边栏的猫爪按钮召唤 / 收起） =====
+       .pet 是外框，.pet-img 是图片（点击的就是它），.pet-bubble 是偶尔冒出来的对话框。
+       图片文件在 icons 文件夹里（文件名在 script 配置区的 PET_IMG），第一次召唤时才开始加载。 -->
+  <div class="pet" id="pet" aria-hidden="true">
+    <div class="pet-bubble" id="pet-bubble"><span id="pet-say"></span><i class="d1"></i><i class="d2"></i></div>
+    <img class="pet-img" id="pet-img" alt="" draggable="false">
+  </div>
+
   <!-- 屏幕正上方的提示条：专注时间到了会在这里提示（点一下可以关掉） -->
   <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
 
@@ -1514,12 +1605,20 @@
        - 浏览器能直接播放 mp3、m4a、flac、ogg、wav。网易云自己的加密格式（比如 .ncm）浏览器放不了。
        - 用网页上传文件时，单个文件不能超过 25 MB。 */
   const SONGS = [
-    "夜行列車～nothing to lose～.mp3",
-    "ソラゴト（虚言）.mp3",
-    "Wake.mp3",
-    "Everywhere We Go.mp3",// ← 示例，换成你 music 文件夹里真实的文件名
+    "示例歌手 - 示例歌名.mp3",   // ← 示例，换成你 music 文件夹里真实的文件名
     // { file: "01.mp3", title: "歌名", artist: "歌手", cover: "01.jpg", lyric: "01.lrc" },   // ← 完整写法的例子
   ];
+
+  /* ============================================================
+     【改这里】桌宠设置
+     ============================================================ */
+  const PET_IMG      = "pet.png";          // 桌宠图片，放在 icons 文件夹里
+  const PET_SAY      = "中国人...";         // 点击时偶尔冒出来的对话框里的字
+  const PET_EGG_SONG = "朋友的酒.mp3";      // 彩蛋播放的歌，放在 music 文件夹里（文件名要和这里一模一样）
+  const PET_BUBBLE_CHANCE = 1 / 5;         // 每次点击冒出对话框的概率（固定不变：1/5 = 20%）
+  const PET_BUBBLE_MS     = 2000;          // 对话框停留多久（毫秒）
+  const PET_COMBO         = 20;            // 连续点击多少下触发彩蛋
+  const PET_COMBO_GAP     = 1500;          // "连续"的意思：两次点击之间不超过这么久（毫秒），超过了就重新数
 
   /* ---------- A. 工具：生成"首字母渐变图标"（图片没传或加载失败时用） ---------- */
   function letterIcon(box, name) {
@@ -1931,7 +2030,7 @@
     cleanBtn.setAttribute("aria-pressed", String(on));
 
     // 退出清爽模式 = 番茄钟停止（你要求的规则）
-    if (!on) { stopPomo(); closeCalc(); closeMusic(); }   // 音乐窗口会收起，但音乐不会停；想暂停：再按 C，打开音乐窗口
+    if (!on) { stopPomo(); closeCalc(); closeMusic(); closePet(); }   // 音乐窗口会收起，但音乐不会停；想暂停：再按 C，打开音乐窗口
   }
   const toggleClean = () => setClean(!isClean());
 
@@ -2041,6 +2140,7 @@
   /* ----- 窗口的打开 / 关闭（只是显示和隐藏，不影响计时） ----- */
   function openPomo() {
     pomoEl.classList.add("open");
+    bringToFront(pomoEl);
     // 如果正等着输入，就直接把光标放进输入框
     if (pomoEl.dataset.phase === "idle") requestAnimationFrame(() => pomoInput.focus());
   }
@@ -2185,6 +2285,26 @@
        之后每一帧让速度按指数规律衰减，位置 += 速度 × 时间，所以越滑越慢、自然停下。
        撞到屏幕边缘就贴边停住。
      ============================================================ */
+  /* ----- 窗口层级：点到哪个窗口，哪个窗口就移到最上面 -----
+     做法：记下所有窗口"从下到上"的顺序；点到某个窗口，就把它挪到队伍最后，
+           然后按顺序重新给每个窗口分配 z-index（120、121、122……）。
+     窗口的层级只在 120 起的一小段里排，不会冒到搜索时的模糊层（135）上面；
+     桌宠是 130，永远比所有窗口都高。 */
+  const WIN_BASE_Z = 120;
+  let winOrder = null;                 // 第一次用到时才从页面里收集所有 .win
+  function bringToFront(el) {
+    if (!winOrder) winOrder = Array.prototype.slice.call(document.querySelectorAll(".win"));
+    const i = winOrder.indexOf(el);
+    if (i !== -1) winOrder.splice(i, 1);
+    winOrder.push(el);
+    winOrder.forEach((w, k) => { w.style.zIndex = String(WIN_BASE_Z + k); });
+  }
+  // 用"捕获"方式监听：不管点到窗口里的哪个地方（按钮、输入框、空白处），都会先触发这里
+  document.addEventListener("pointerdown", (e) => {
+    const w = e.target && e.target.closest ? e.target.closest(".win") : null;
+    if (w) bringToFront(w);
+  }, true);
+
   // 把窗口"缩放的中心点"设到某个按钮的位置：
   // 关闭时窗口会朝这个点缩小、收进按钮里；再次打开时就从那里"长"出来。
   // 只在窗口处于打开状态时调用（这时窗口大小是原始大小，算出来才准）。
@@ -2581,7 +2701,7 @@
   });
 
   // 打开 / 关闭
-  function openCalc() { calcEl.classList.add("open"); }
+  function openCalc() { calcEl.classList.add("open"); bringToFront(calcEl); }
   function closeCalc() {
     if (!calcEl.classList.contains("open")) return;
     aimAt(calcEl, calcBtn);                                        // 朝侧边栏的计算器按钮收进去
@@ -3060,7 +3180,7 @@
   }
 
   // ----- 窗口的打开 / 关闭 / 拖动 -----
-  function openMusic() { musicEl.classList.add("open"); }
+  function openMusic() { musicEl.classList.add("open"); bringToFront(musicEl); }
   function closeMusic() {
     if (!musicEl.classList.contains("open")) return;
     aimAt(musicEl, musicBtn);                // 朝侧边栏的音符按钮收进去（音乐不会停）
@@ -3073,6 +3193,127 @@
   // 在窗口空白处按住可以拖；点按钮、进度条、歌曲列表时不触发拖动
   const musicDrag = makeDraggable(musicEl, musicEl, "button, .music-bar, .music-list");
   window.addEventListener("resize", () => musicDrag.clamp());
+
+  /* ============================================================
+     O. 桌宠（清爽模式侧边栏里的最后一个按钮）
+     - 点侧边栏的猫爪按钮：桌宠从屏幕右下角弹出来；再点一次：收回去。这是唯一能收起它的办法。
+       （退出清爽模式时它也会收起）
+     - 点桌宠：做一次"Q 弹"（在垂直方向快速压扁一点，再弹回来）。
+     - 每次点击都有固定 1/5 的概率冒出对话框，在头顶停 2 秒后消失。
+     - 连续点击 20 下：触发彩蛋。桌宠一直 Q 弹，不理会别的点击，同时播放一首歌，
+       放完歌、或者你再点一次侧边栏的按钮（桌宠收起）为止。
+     可以改的数字和文件名都在上面的配置区（PET_xxx）。
+     ============================================================ */
+  /* PET-PURE-START */
+  // "连续点击"的计数：和上一次点击间隔不超过 gap 毫秒，就在原来的基础上 +1，否则重新从 1 开始数
+  function nextCombo(count, lastTime, now, gap) {
+    return (lastTime > 0 && now - lastTime <= gap) ? count + 1 : 1;
+  }
+  // Q 弹的关键帧：垂直方向先压扁到 80%，再略微拉长到 106%，最后回到 100%（offset 是这一帧发生在整段动画的哪个时刻）
+  const PET_BOUNCE = [
+    { transform: "scaleY(1)" },
+    { transform: "scaleY(0.8)",  offset: 0.28 },
+    { transform: "scaleY(1.06)", offset: 0.62 },
+    { transform: "scaleY(1)" },
+  ];
+  /* PET-PURE-END */
+
+  /* PET-START */
+  const petEl     = document.getElementById("pet");
+  const petImg    = document.getElementById("pet-img");
+  const petBubble = document.getElementById("pet-bubble");
+  const petSayEl  = document.getElementById("pet-say");
+  const petBtn    = document.getElementById("pet-btn");
+
+  let petOpen = false;
+  let petImgSet = false;          // 图片地址是不是已经设置过（第一次召唤时才设置，之后不重复加载）
+  let petClicks = 0;              // 当前连续点了几下
+  let petLast = 0;                // 上一次点击的时间
+  let petEgg = false;             // 彩蛋进行中？
+  let petAnim = null;             // 正在播放的 Q 弹动画
+  let petBubbleTimer = 0;
+  let petEggAudio = null;         // 彩蛋的歌
+  let petResumeMusic = false;     // 彩蛋开始时音乐播放器正在放歌的话，彩蛋结束后让它接着放
+
+  // Q 弹。loop 为 true 时一直循环（彩蛋用）；系统开了"减少动画"就不播
+  function petBounce(loop) {
+    if (petAnim) { petAnim.cancel(); petAnim = null; }
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !petImg.animate) return;
+    petAnim = petImg.animate(
+      PET_BOUNCE,
+      loop ? { duration: 460, iterations: Infinity, easing: "ease-out" } : { duration: 380, easing: "ease-out" }
+    );
+  }
+
+  // 冒出对话框，PET_BUBBLE_MS 毫秒后消失。已经显示着时再触发，会从头重新计时
+  function petSay(text) {
+    petSayEl.textContent = text || PET_SAY;
+    petBubble.classList.add("show");
+    clearTimeout(petBubbleTimer);
+    petBubbleTimer = setTimeout(() => petBubble.classList.remove("show"), PET_BUBBLE_MS);
+  }
+
+  // 点击桌宠
+  petImg.addEventListener("click", () => {
+    if (petEgg) return;                                        // 彩蛋进行中：无视所有点击
+    const now = Date.now();
+    petClicks = nextCombo(petClicks, petLast, now, PET_COMBO_GAP);
+    petLast = now;
+    petBounce(false);                                          // 每次点击都 Q 弹一下
+    if (Math.random() < PET_BUBBLE_CHANCE) petSay();           // 固定 1/5 的概率冒出对话框
+    if (petClicks >= PET_COMBO) startEgg();                    // 连点够了：彩蛋
+  });
+
+  // ----- 彩蛋 -----
+  function startEgg() {
+    petEgg = true;
+    petClicks = 0; petLast = 0;
+    petBounce(true);                                           // 一直 Q 弹
+    // 音乐播放器如果正在放歌，先暂停，彩蛋结束后再接着放（两首歌同时响会乱）
+    petResumeMusic = !mAudio.paused;
+    if (petResumeMusic) mAudio.pause();
+    petEggAudio = new Audio(assetPath(MUSIC_DIR, PET_EGG_SONG));
+    petEggAudio.addEventListener("ended", endEgg);             // 歌放完了 → 彩蛋结束
+    petEggAudio.addEventListener("error", () => {              // 歌曲文件找不到 / 打不开 → 提示一下，结束彩蛋
+      endEgg();
+      petSay("找不到彩蛋的歌：请检查 PET_EGG_SONG");
+    });
+    petEggAudio.play().catch(() => {});                        // 失败的情况由上面的 error 事件处理
+  }
+  function endEgg() {
+    if (!petEgg) return;
+    petEgg = false;
+    if (petAnim) { petAnim.cancel(); petAnim = null; }
+    if (petEggAudio) { petEggAudio.pause(); petEggAudio = null; }
+    petClicks = 0; petLast = 0;
+    if (petResumeMusic) { petResumeMusic = false; mAudio.play().catch(() => {}); }
+  }
+
+  // ----- 召唤 / 收起 -----
+  function openPet() {
+    if (!petImgSet) { petImg.src = assetPath(ICON_DIR, PET_IMG); petImgSet = true; }
+    petOpen = true;
+    petEl.classList.add("open");
+    petEl.setAttribute("aria-hidden", "false");
+    petBtn.setAttribute("aria-pressed", "true");              // 按钮变成白色实心，表示桌宠在场
+  }
+  function closePet() {
+    if (!petOpen) return;
+    petOpen = false;
+    petEl.classList.remove("open");
+    petEl.setAttribute("aria-hidden", "true");
+    petBtn.setAttribute("aria-pressed", "false");
+    endEgg();                                                  // 彩蛋进行中收起：歌停、动画停
+    clearTimeout(petBubbleTimer);
+    petBubble.classList.remove("show");
+    if (petAnim) { petAnim.cancel(); petAnim = null; }
+    petClicks = 0; petLast = 0;
+  }
+  petBtn.addEventListener("click", () => { petOpen ? closePet() : openPet(); });
+  // 图片找不到（还没上传到 icons 文件夹）：悄悄收回去，按钮恢复原样
+  petImg.addEventListener("error", () => { petImgSet = false; closePet(); });
+  /* PET-END */
 
   /* ---------- G. 入场动画 ---------- */
   // 等页面画好后给 body 加 "ready"，CSS 里的入场动画就开始播放

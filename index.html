@@ -1214,6 +1214,49 @@
   .pet-bubble .d1 { width: 16px; height: 16px; right: 18px; bottom: -22px; }
   .pet-bubble .d2 { width: 10px; height: 10px; right: 6px; bottom: -34px; }
 
+  /* ---------- 9.17 彩蛋场景：迪斯科球的画布 + 第二个桌宠（DeepSeek） ---------- */
+  /* 迪斯科球和灯光画在这张铺满屏幕的画布上。层级 126：盖在所有悬浮窗口（120 起）上面，
+     但在两个桌宠（129、130）下面，所以灯光不会把桌宠"染色"。鼠标点击会穿透它。 */
+  .disco {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 126;
+    pointer-events: none;
+    display: none;                   /* 平时完全不存在；彩蛋开始时 JS 才让它显示 */
+  }
+  .disco.on { display: block; }
+
+  /* 第二个桌宠：彩蛋开始时从屏幕下方升起来，站在 Claude 的左边。
+     right: 150px —— 它的右边缘离屏幕右边 150px，比 Claude（宽 200px）更靠里，
+     所以它"被画面裁掉"的那条直切边正好藏在 Claude 身后（我用两张抠好的图算过，这样一点都不会露出来）。
+     层级 129：在 Claude（130）后面。不接收鼠标，不会挡住任何东西。 */
+  .pet-ds {
+    position: fixed;
+    right: 150px;
+    bottom: 0;
+    width: 200px;
+    z-index: 129;
+    pointer-events: none;
+    transform: translateY(105%);     /* 平时藏在屏幕下方的外面 */
+    visibility: hidden;
+    transition: transform 0.35s cubic-bezier(0.5, 0, 0.75, 0), visibility 0s 0.35s;
+  }
+  .pet-ds.show {
+    transform: translateY(0);
+    visibility: visible;
+    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), visibility 0s;   /* 升起来时带回弹，和 Claude 一样 Q 弹 */
+  }
+  .pet-ds img {
+    display: block;
+    width: 100%;
+    height: auto;
+    transform-origin: 50% 100%;      /* Q 弹时底边不动 */
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
   /* ---------- 10. 入场动画（只做一次） ----------
      模块按顺序从下方浮现。--i 是顺序号（在 HTML 里写），越小越先出现。 */
   .reveal {
@@ -1549,6 +1592,12 @@
     <img class="pet-img" id="pet-img" alt="" draggable="false">
   </div>
 
+  <!-- ===== 彩蛋场景 =====
+       <canvas>：迪斯科球和灯光（画在上面）；.pet-ds：第二个桌宠（DeepSeek）。
+       它们平时都是看不见的，连点桌宠 20 下触发彩蛋时才出现。 -->
+  <canvas class="disco" id="disco" aria-hidden="true"></canvas>
+  <div class="pet-ds" id="pet-ds" aria-hidden="true"><img id="pet-ds-img" alt="" draggable="false"></div>
+
   <!-- 屏幕正上方的提示条：专注时间到了会在这里提示（点一下可以关掉） -->
   <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
 
@@ -1605,11 +1654,10 @@
        - 浏览器能直接播放 mp3、m4a、flac、ogg、wav。网易云自己的加密格式（比如 .ncm）浏览器放不了。
        - 用网页上传文件时，单个文件不能超过 25 MB。 */
   const SONGS = [
-    //"示例歌手 - 示例歌名.mp3",    ← 示例，换成你 music 文件夹里真实的文件名
     "Everywhere We Go.mp3",
     "Wake.mp3",
     "ソラゴト（虚言）.mp3",
-    "夜行列車～nothing to lose～.mp3"
+    "夜行列車～nothing to lose～.mp3",
     // { file: "01.mp3", title: "歌名", artist: "歌手", cover: "01.jpg", lyric: "01.lrc" },   // ← 完整写法的例子
   ];
 
@@ -1623,6 +1671,12 @@
   const PET_BUBBLE_MS     = 2000;          // 对话框停留多久（毫秒）
   const PET_COMBO         = 20;            // 连续点击多少下触发彩蛋
   const PET_COMBO_GAP     = 1500;          // "连续"的意思：两次点击之间不超过这么久（毫秒），超过了就重新数
+  const PET2_IMG = "ds.png";               // 彩蛋时从 Claude 左边冒出来的第二个桌宠（DeepSeek），放在 icons 文件夹里
+
+  /* 彩蛋时的迪斯科球 */
+  const DISCO_X       = 0.5;               // 球的水平位置：0.5 = 屏幕正中间（0 = 最左边，1 = 最右边）
+  const DISCO_Y       = 1 / 8;             // 球最后停在屏幕从上往下 1/8 的位置
+  const DISCO_DROP_MS = 3200;              // 球落下来要多久（毫秒）：数字越大，落得越慢
 
   /* ---------- A. 工具：生成"首字母渐变图标"（图片没传或加载失败时用） ---------- */
   function letterIcon(box, name) {
@@ -3220,6 +3274,9 @@
     { transform: "scaleY(1.06)", offset: 0.62 },
     { transform: "scaleY(1)" },
   ];
+  // Q 弹的节奏。彩蛋时 Claude 和 DeepSeek 用的是"同一个对象"，所以每一次弹起落下的时长、快慢完全一致。
+  const PET_TAP_OPTS = { duration: 380, easing: "ease-out" };                          // 单击：弹一下
+  const PET_EGG_OPTS = { duration: 460, iterations: Infinity, easing: "ease-out" };    // 彩蛋：无限循环
   /* PET-PURE-END */
 
   /* PET-START */
@@ -3228,6 +3285,8 @@
   const petBubble = document.getElementById("pet-bubble");
   const petSayEl  = document.getElementById("pet-say");
   const petBtn    = document.getElementById("pet-btn");
+  const petDs     = document.getElementById("pet-ds");        // 第二个桌宠（DeepSeek）的外框
+  const petDsImg  = document.getElementById("pet-ds-img");
 
   let petOpen = false;
   let petImgSet = false;          // 图片地址是不是已经设置过（第一次召唤时才设置，之后不重复加载）
@@ -3238,16 +3297,30 @@
   let petBubbleTimer = 0;
   let petEggAudio = null;         // 彩蛋的歌
   let petResumeMusic = false;     // 彩蛋开始时音乐播放器正在放歌的话，彩蛋结束后让它接着放
+  let petDsSet = false;           // DeepSeek 的图片地址是不是已经设置过
+  let petDsOk = true;             // DeepSeek 的图片能不能正常加载（找不到的话彩蛋里就不出现它，其他照常）
+  let petDsAnim = null;           // DeepSeek 的 Q 弹动画
 
   // Q 弹。loop 为 true 时一直循环（彩蛋用）；系统开了"减少动画"就不播
   function petBounce(loop) {
     if (petAnim) { petAnim.cancel(); petAnim = null; }
     const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce || !petImg.animate) return;
-    petAnim = petImg.animate(
-      PET_BOUNCE,
-      loop ? { duration: 460, iterations: Infinity, easing: "ease-out" } : { duration: 380, easing: "ease-out" }
-    );
+    petAnim = petImg.animate(PET_BOUNCE, loop ? PET_EGG_OPTS : PET_TAP_OPTS);
+  }
+
+  // DeepSeek：显示 / 隐藏（靠加上或去掉 .show，CSS 负责升起和沉下去的动画）
+  function dsShow(on) {
+    const show = on && petDsOk;
+    petDs.classList.toggle("show", show);
+    petDs.setAttribute("aria-hidden", show ? "false" : "true");
+  }
+  // DeepSeek 的 Q 弹：关键帧和节奏都用 Claude 的那一份（PET_BOUNCE / PET_EGG_OPTS）
+  function dsBounce() {
+    if (petDsAnim) { petDsAnim.cancel(); petDsAnim = null; }
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !petDsImg.animate || !petDsOk) return;
+    petDsAnim = petDsImg.animate(PET_BOUNCE, PET_EGG_OPTS);
   }
 
   // 冒出对话框，PET_BUBBLE_MS 毫秒后消失。已经显示着时再触发，会从头重新计时
@@ -3273,21 +3346,28 @@
   function startEgg() {
     petEgg = true;
     petClicks = 0; petLast = 0;
-    petBounce(true);                                           // 一直 Q 弹
+    petBounce(true);                                           // Claude 一直 Q 弹
+    dsShow(true);                                              // DeepSeek 从屏幕下方升起来
+    dsBounce();                                                // DeepSeek 用同样的节奏 Q 弹（和上一行在同一瞬间开始，所以两个同步）
+    discoStart();                                              // 迪斯科球从屏幕顶上落下来
     // 音乐播放器如果正在放歌，先暂停，彩蛋结束后再接着放（两首歌同时响会乱）
     petResumeMusic = !mAudio.paused;
     if (petResumeMusic) mAudio.pause();
     petEggAudio = new Audio(assetPath(MUSIC_DIR, PET_EGG_SONG));
-    petEggAudio.addEventListener("ended", endEgg);             // 歌放完了 → 彩蛋结束
+    petEggAudio.addEventListener("ended", () => endEgg());     // 歌放完了 → 彩蛋结束
     petEggAudio.addEventListener("error", () => {              // 歌曲文件找不到 / 打不开 → 提示一下，结束彩蛋
       endEgg();
       petSay("找不到彩蛋的歌：请检查 PET_EGG_SONG");
     });
     petEggAudio.play().catch(() => {});                        // 失败的情况由上面的 error 事件处理
   }
-  function endEgg() {
+  // fast 为 true 时（桌宠被收起），迪斯科球走得更快；歌自然放完时，球会慢慢升回屏幕上方
+  function endEgg(fast) {
     if (!petEgg) return;
     petEgg = false;
+    dsShow(false);                                             // DeepSeek 沉回屏幕下方
+    if (petDsAnim) { petDsAnim.cancel(); petDsAnim = null; }
+    discoStop(!!fast);                                         // 灯光渐渐熄灭，球升回去
     if (petAnim) { petAnim.cancel(); petAnim = null; }
     if (petEggAudio) { petEggAudio.pause(); petEggAudio = null; }
     petClicks = 0; petLast = 0;
@@ -3297,6 +3377,8 @@
   // ----- 召唤 / 收起 -----
   function openPet() {
     if (!petImgSet) { petImg.src = assetPath(ICON_DIR, PET_IMG); petImgSet = true; }
+    // 提前把 DeepSeek 的图片也加载好，这样彩蛋触发的那一刻它能立刻升起来，不用等图片下载
+    if (!petDsSet) { petDsImg.src = assetPath(ICON_DIR, PET2_IMG); petDsSet = true; }
     petOpen = true;
     petEl.classList.add("open");
     petEl.setAttribute("aria-hidden", "false");
@@ -3308,7 +3390,7 @@
     petEl.classList.remove("open");
     petEl.setAttribute("aria-hidden", "true");
     petBtn.setAttribute("aria-pressed", "false");
-    endEgg();                                                  // 彩蛋进行中收起：歌停、动画停
+    endEgg(true);                                              // 彩蛋进行中收起：歌停、动画停、球快速收走
     clearTimeout(petBubbleTimer);
     petBubble.classList.remove("show");
     if (petAnim) { petAnim.cancel(); petAnim = null; }
@@ -3317,7 +3399,218 @@
   petBtn.addEventListener("click", () => { petOpen ? closePet() : openPet(); });
   // 图片找不到（还没上传到 icons 文件夹）：悄悄收回去，按钮恢复原样
   petImg.addEventListener("error", () => { petImgSet = false; closePet(); });
+  // DeepSeek 的图片找不到：彩蛋里不出现它，其他（Q 弹、灯光、歌）照常
+  petDsImg.addEventListener("error", () => { petDsOk = false; petDsSet = false; });   // petDsSet 复位：下次召唤桌宠时会再试一次
+  petDsImg.addEventListener("load", () => { petDsOk = true; });                       // 之后只要成功加载过（比如你把图片补传上去了），就恢复可用，不用刷新页面
   /* PET-END */
+
+  /* ============================================================
+     P. 迪斯科球（彩蛋时出现）
+     过程：
+       ① 球从屏幕顶上"缓缓落下"（吊在一根细绳上），停在屏幕从上往下约 1/8 的位置，落地后小幅晃几下停稳；
+       ② 停稳之后球才开始旋转，同时往四面八方射出彩色的灯光，灯光也跟着转；
+       ③ 彩蛋结束时灯光渐渐熄灭，球顺着绳子升回屏幕上方。
+     全部画在一张铺满屏幕的 <canvas>（画布）上，每一帧重画一次。
+     球的位置、落下的时间在上面的配置区（DISCO_X / DISCO_Y / DISCO_DROP_MS）。
+     ============================================================ */
+  /* DISCO-PURE-START */
+  const DISCO_BEAMS = 12;          // 灯光有几束
+  const DISCO_R_FRAC = 0.07;       // 球的半径 = 屏幕高度 × 这个数……
+  const DISCO_R_MIN = 36, DISCO_R_MAX = 70;   // ……但不会小于 36px、不会大于 70px
+  const clamp01 = (x) => Math.min(Math.max(x, 0), 1);
+
+  // 球的高度（球心离屏幕顶边的距离）。
+  //   落下阶段：从 yStart（屏幕上方之外）落到 yStop，前快后慢，像被慢慢放下来；
+  //   落地之后：围绕 yStop 上下晃几下，越晃越小，慢慢停稳。
+  function discoDropY(elapsed, dropMs, yStart, yStop) {
+    if (elapsed < dropMs) {
+      const p = elapsed / dropMs;
+      return yStart + (yStop - yStart) * (1 - Math.pow(1 - p, 3));
+    }
+    const sec = (elapsed - dropMs) / 1000;
+    return yStop + 9 * Math.exp(-2.2 * sec) * Math.sin(9 * sec);
+  }
+
+  // 球身上的镜片。把球想成一个地球仪：纬度分成 11 圈，每一圈里按经度排一圈小方片，
+  // 越靠近两极那一圈越短，所以片数更少（这样每片都差不多是方的）。
+  // rot 是球转过的角度；t 是时间（秒），用来让镜片忽明忽暗地闪。
+  // 只返回正面（朝向我们这一半）的镜片，以球心为原点，单位是像素：
+  //   { x, y, w, h, shade 明暗, twinkle 闪烁强度 0~1, hue 闪烁时的颜色 }
+  function discoTiles(R, rot, t) {
+    const out = [];
+    const N = 11, dphi = Math.PI / N;
+    const lx = -0.45, ly = -0.55, lz = 0.70;                    // 光源方向（在球的左上前方）
+    const ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
+    for (let k = 0; k < N; k++) {
+      const phi = ((k + 0.5) / N - 0.5) * Math.PI;              // 这一圈的纬度
+      const cphi = Math.cos(phi), sphi = Math.sin(phi);
+      const m = Math.max(5, Math.round(2 * Math.PI * cphi / dphi));   // 这一圈有几片
+      for (let j = 0; j < m; j++) {
+        const theta = (j + 0.5) / m * 2 * Math.PI + rot;        // 这一片现在转到了哪个经度
+        const ct = Math.cos(theta), st = Math.sin(theta);
+        if (ct < 0.04) continue;                                // 转到背面去了，看不见
+        const nx = cphi * st, ny = sphi, nz = cphi * ct;        // 这一片朝向哪里（法线）
+        const diffuse = Math.max(0, (nx * lx + ny * ly + nz * lz) / ll);   // 越正对光源越亮
+        const w = R * cphi * (2 * Math.PI / m) * ct * 0.84;     // 越靠近球的边缘，看起来越窄（透视）；0.84 是留出镜片之间的缝
+        const h = R * dphi * cphi * 0.84;
+        // 每片镜片有自己固定的"随机数"（由它的位置算出来），保证它转动时闪烁的节奏跟着它走
+        const seed = Math.sin((k * 37 + j * 17 + 1) * 12.9898) * 43758.5453;
+        const rnd = seed - Math.floor(seed);
+        const twinkle = Math.pow(0.5 + 0.5 * Math.sin(t * 5 + rnd * 40), 6);   // 大部分时间接近 0，偶尔一下接近 1
+        out.push({ x: R * nx, y: R * ny, w: w, h: h, shade: 0.28 + 0.72 * diffuse, twinkle: twinkle, hue: (rnd * 360 + t * 90) % 360 });
+      }
+    }
+    return out;
+  }
+
+  // 灯光：count 束，每束从球心射出去，一束一个颜色，颜色随时间循环变化；
+  // 相邻两束的转动方向相反，所以灯光一直在交错、扫来扫去（更"乱"）。
+  // 返回 { angle 方向（弧度）, half 光束宽度的一半（弧度）, hue 颜色, alpha 亮度 }
+  function discoBeams(t, count) {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const dir = i % 2 === 0 ? 1 : -1;
+      out.push({
+        angle: dir * t * 0.55 + i * (2 * Math.PI / count),
+        half: 0.045 + 0.03 * (0.5 + 0.5 * Math.sin(t * 1.7 + i * 1.3)),
+        hue: (t * 70 + i * (360 / count)) % 360,
+        alpha: 0.55 + 0.35 * Math.sin(t * 3 + i * 2.1),
+      });
+    }
+    return out;
+  }
+  /* DISCO-PURE-END */
+
+  /* DISCO-START */
+  const discoCv = document.getElementById("disco");
+  const discoCtx = discoCv.getContext ? discoCv.getContext("2d") : null;
+  const disco = { running: false, leaving: false, raf: 0, t0: 0, tLeave: 0, leaveMs: 1000, yFrom: 0, aFrom: 1, lastY: 0, lastAlpha: 0 };
+
+  // 让画布的像素尺寸 = 屏幕尺寸 × 屏幕的像素密度（高清屏上球才不会糊）
+  function discoResize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    discoCv.width = Math.round(window.innerWidth * dpr);
+    discoCv.height = Math.round(window.innerHeight * dpr);
+    discoCtx.setTransform(dpr, 0, 0, dpr, 0, 0);       // 之后画图都按"CSS 像素"的坐标来，不用管 dpr
+  }
+  window.addEventListener("resize", () => { if (disco.running) discoResize(); });
+
+  function discoStart() {
+    if (!discoCtx) return;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return;                                // 系统开了"减少动画"：不放灯光和球
+    cancelAnimationFrame(disco.raf);
+    disco.running = true;
+    disco.leaving = false;
+    disco.t0 = performance.now();
+    discoCv.classList.add("on");
+    discoResize();
+    disco.raf = requestAnimationFrame(discoFrame);
+  }
+
+  // 结束：不是一下子消失，而是灯光渐渐熄灭、球升回屏幕上方（fast 时快一些），升完了才真正隐藏画布
+  function discoStop(fast) {
+    if (!disco.running || disco.leaving) return;
+    disco.leaving = true;
+    disco.tLeave = performance.now();
+    disco.leaveMs = fast ? 400 : 1100;
+    disco.yFrom = disco.lastY;                         // 从"现在的位置、现在的灯光亮度"开始往回收
+    disco.aFrom = disco.lastAlpha;
+  }
+  function discoHide() {
+    disco.running = false;
+    disco.leaving = false;
+    cancelAnimationFrame(disco.raf);
+    discoCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    discoCv.classList.remove("on");
+  }
+
+  // 每一帧：算出球现在在哪、灯光有多亮、转到哪个角度，然后画出来
+  function discoFrame() {
+    if (!disco.running) return;
+    const now = performance.now();
+    const w = window.innerWidth, h = window.innerHeight;
+    const R = Math.min(DISCO_R_MAX, Math.max(DISCO_R_MIN, h * DISCO_R_FRAC));
+    const cx = w * DISCO_X, yStop = h * DISCO_Y, yStart = -R - 70;      // yStart：球一开始在屏幕上方之外
+    const elapsed = now - disco.t0;
+    let y = discoDropY(elapsed, DISCO_DROP_MS, yStart, yStop);
+    let alpha = clamp01((elapsed - DISCO_DROP_MS) / 800);               // 球停稳之后，灯光在 0.8 秒里渐渐亮起来
+    const rot = Math.max(0, elapsed - DISCO_DROP_MS) / 1000 * 1.2;       // 球停稳之后才开始旋转（每秒约 1.2 弧度）
+    if (disco.leaving) {
+      const p = clamp01((now - disco.tLeave) / disco.leaveMs);
+      y = disco.yFrom + (yStart - disco.yFrom) * p * p * p;             // 球越升越快
+      alpha = disco.aFrom * (1 - p);                                    // 灯光渐渐熄灭
+      if (p >= 1) { discoHide(); return; }
+    }
+    disco.lastY = y;
+    disco.lastAlpha = alpha;
+    drawDisco(discoCtx, w, h, cx, y, R, rot, elapsed / 1000, alpha);
+    disco.raf = requestAnimationFrame(discoFrame);
+  }
+
+  function drawDisco(ctx, w, h, cx, y, R, rot, tSec, alpha) {
+    ctx.clearRect(0, 0, w, h);
+
+    // ① 灯光和光晕：用"叠加"混合（lighter），几束光重叠的地方会更亮、颜色会混在一起，才像真的灯光
+    if (alpha > 0.01) {
+      ctx.globalCompositeOperation = "lighter";
+      const far = Math.hypot(w, h) * 1.2;                              // 光束的长度：够到屏幕最远的角
+      discoBeams(tSec, DISCO_BEAMS).forEach((b) => {
+        const g = ctx.createRadialGradient(cx, y, R * 0.5, cx, y, far);   // 越离球越淡
+        const a = Math.max(0, b.alpha) * alpha * 0.5;
+        g.addColorStop(0, "hsla(" + b.hue + ",100%,60%," + a + ")");
+        g.addColorStop(1, "hsla(" + b.hue + ",100%,60%,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();                                               // 一束光 = 一个从球心射出去的细长三角形
+        ctx.moveTo(cx, y);
+        ctx.lineTo(cx + Math.cos(b.angle - b.half) * far, y + Math.sin(b.angle - b.half) * far);
+        ctx.lineTo(cx + Math.cos(b.angle + b.half) * far, y + Math.sin(b.angle + b.half) * far);
+        ctx.closePath();
+        ctx.fill();
+      });
+      const halo = ctx.createRadialGradient(cx, y, R * 0.9, cx, y, R * 3.2);   // 球周围一圈随时间变色的光晕
+      halo.addColorStop(0, "hsla(" + ((tSec * 90) % 360) + ",100%,65%," + 0.35 * alpha + ")");
+      halo.addColorStop(1, "hsla(0,0%,0%,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(cx, y, R * 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";                    // 画完灯光，恢复成普通的"盖上去"混合
+    }
+
+    // ② 吊绳：从屏幕顶边一直连到球顶
+    ctx.strokeStyle = "rgba(225,228,240,0.85)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, y - R);
+    ctx.stroke();
+
+    // ③ 球身：先涂深色底，再把镜片一片片画上去，最后罩一层立体感（左上高光 + 边缘变暗）
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, y, R, 0, Math.PI * 2);
+    ctx.clip();                                                        // 之后画的东西都被限制在球的圆形范围内
+    ctx.fillStyle = "#30354a";
+    ctx.fillRect(cx - R, y - R, R * 2, R * 2);
+    discoTiles(R, rot, tSec).forEach((tl) => {
+      const lum = Math.round(60 + 170 * tl.shade);
+      ctx.fillStyle = "rgb(" + lum + "," + (lum + 4) + "," + Math.min(255, lum + 16) + ")";   // 银色，稍微偏冷
+      ctx.fillRect(cx + tl.x - tl.w / 2, y + tl.y - tl.h / 2, tl.w, tl.h);
+      if (tl.twinkle > 0.12) {                                         // 闪到的镜片：盖一层彩色的亮光
+        ctx.fillStyle = "hsla(" + tl.hue + ",100%,75%," + Math.min(1, tl.twinkle) + ")";
+        ctx.fillRect(cx + tl.x - tl.w / 2, y + tl.y - tl.h / 2, tl.w, tl.h);
+      }
+    });
+    const shade = ctx.createRadialGradient(cx - R * 0.35, y - R * 0.4, R * 0.05, cx, y, R);
+    shade.addColorStop(0, "rgba(255,255,255,0.35)");
+    shade.addColorStop(0.6, "rgba(255,255,255,0)");
+    shade.addColorStop(1, "rgba(0,0,20,0.45)");
+    ctx.fillStyle = shade;
+    ctx.fillRect(cx - R, y - R, R * 2, R * 2);
+    ctx.restore();
+  }
+  /* DISCO-END */
 
   /* ---------- G. 入场动画 ---------- */
   // 等页面画好后给 body 加 "ready"，CSS 里的入场动画就开始播放
